@@ -344,7 +344,9 @@ class FlourishAPI
     private function create_customer($customer)
     {
         if (empty($customer['dob'])) {
-            wc_add_notice(__('Date of Birth is required. Please update your account details.', 'woocommerce'), 'error');
+            if (function_exists('wc_add_notice')) {
+                \wc_add_notice(\__('Date of Birth is required. Please update your account details.', 'woocommerce'), 'error');
+            }
             throw new \Exception('Date of Birth is required.');
         }
 

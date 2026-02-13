@@ -489,7 +489,7 @@ class FlourishItems
             'name'                  => $flourish_item['item_name'],
             'description'           => $flourish_item['item_description'] ?? '',
             'sku'                   => $flourish_item['sku'],
-            'price'                 => $flourish_item['price'] ?? 0,
+            'price'                 => $flourish_item['retail_price'] ?? $flourish_item['price'] ?? 0,
             'uom'                   => $flourish_item['uom'] ?? '',
             'uom_description'       => $flourish_item['uom_description'] ?? '',
             'unit_weight'           => $flourish_item['unit_weight'] ?? '',

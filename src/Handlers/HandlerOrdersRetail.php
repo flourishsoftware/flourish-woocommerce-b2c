@@ -28,7 +28,11 @@ class HandlerOrdersRetail
          */
         add_filter('woocommerce_can_reduce_order_stock', [$this, 'conditionally_disable_stock_reduction'], 10, 2);
 
+        // Classic checkout hook
         add_action('woocommerce_checkout_order_processed', [$this, 'handle_order_retail'], 10, 1);
+
+        // Block-based checkout hook (WooCommerce Blocks)
+        add_action('woocommerce_store_api_checkout_order_processed', [$this, 'handle_order_retail'], 10, 1);
     }
 
     /**
@@ -65,7 +69,11 @@ class HandlerOrdersRetail
             $flourish_api = $this->initializeFlourishAPI();
 
             // Get or create customer
-            $raw_dob = sanitize_text_field($_POST['dob'] ?? '');
+            // Try order meta first (for admin sync), then $_POST (for checkout)
+            $raw_dob = $wc_order->get_meta('_customer_dob') ?: $wc_order->get_meta('_billing_dob');
+            if (empty($raw_dob)) {
+                $raw_dob = sanitize_text_field($_POST['billing_dob'] ?? '');
+            }
             $customer_data = $this->build_customer_data($wc_order, $raw_dob);
             $customer = $flourish_api->get_or_create_customer_by_email($customer_data);
 
@@ -78,12 +86,36 @@ class HandlerOrdersRetail
                 return;
             }
 
+            // Determine fulfillment type from shipping method
+            $fulfillment_type = $this->get_fulfillment_type($wc_order);
+
             $order_payload = [
                 'original_order_id' => (string) $wc_order->get_id(),
                 'customer_id'       => $customer['flourish_customer_id'],
                 'order_lines'       => $order_lines,
                 'order_timestamp'   => gmdate("Y-m-d\TH:i:s.v\Z"),
+                'order_status'      => $this->existing_settings['order_status'] ?? 'submitted',
+                'is_recreational'   => $this->existing_settings['is_recreational'] ?? true,
+                'fulfillment_type'  => $fulfillment_type,
             ];
+
+            // Add total_paid for paid orders (online payments)
+            // TODO: Uncomment when Flourish handles paid status correctly
+            // if ($wc_order->is_paid()) {
+            //     $order_payload['total_paid'] = (float) $wc_order->get_total();
+            // }
+
+            // Add expected timestamp based on fulfillment type
+            $expected_timestamp = $this->get_expected_fulfillment_timestamp($wc_order, $fulfillment_type);
+            if ($fulfillment_type === 'delivery') {
+                $order_payload['expected_delivery_timestamp'] = $expected_timestamp;
+
+                // Add delivery address and contact information
+                $delivery_info = $this->get_delivery_information($wc_order);
+                $order_payload = array_merge($order_payload, $delivery_info);
+            } elseif ($fulfillment_type === 'pickup') {
+                $order_payload['expected_pickup_timestamp'] = $expected_timestamp;
+            }
 
             $flourish_order_id = $flourish_api->create_retail_order($order_payload);
 
@@ -116,21 +148,56 @@ class HandlerOrdersRetail
 
     private function build_customer_data($wc_order, $dob)
     {
-        return [
+        $customer_data = [
             'first_name' => $wc_order->get_billing_first_name(),
             'last_name'  => $wc_order->get_billing_last_name(),
             'email'      => $wc_order->get_billing_email(),
             'phone'      => $wc_order->get_billing_phone(),
             'dob'        => $dob,
-            'address'    => [
-                'address1' => $wc_order->get_billing_address_1(),
-                'address2' => $wc_order->get_billing_address_2(),
-                'city'     => $wc_order->get_billing_city(),
-                'state'    => $wc_order->get_billing_state(),
-                'zip_code' => $wc_order->get_billing_postcode(),
-                'country'  => $wc_order->get_billing_country() ?: 'United States',
-            ],
         ];
+
+        // Build address array - API expects array of addresses with correct field names
+        $addresses = [];
+
+        // Add billing address
+        $billing_address = [
+            'address_line_1' => $wc_order->get_billing_address_1(),
+            'city'           => $wc_order->get_billing_city(),
+            'state'          => $wc_order->get_billing_state(),
+            'postcode'       => $wc_order->get_billing_postcode(),
+            'country'        => $wc_order->get_billing_country() ?: 'United States',
+            'type'           => 'billing',
+        ];
+
+        // Add address_line_2 only if present
+        if (!empty($wc_order->get_billing_address_2())) {
+            $billing_address['address_line_2'] = $wc_order->get_billing_address_2();
+        }
+
+        $addresses[] = $billing_address;
+
+        // Add shipping address if different from billing
+        if ($wc_order->has_shipping_address()) {
+            $shipping_address = [
+                'address_line_1' => $wc_order->get_shipping_address_1(),
+                'city'           => $wc_order->get_shipping_city(),
+                'state'          => $wc_order->get_shipping_state(),
+                'postcode'       => $wc_order->get_shipping_postcode(),
+                'country'        => $wc_order->get_shipping_country() ?: 'United States',
+                'type'           => 'shipping',
+            ];
+
+            // Add address_line_2 only if present
+            if (!empty($wc_order->get_shipping_address_2())) {
+                $shipping_address['address_line_2'] = $wc_order->get_shipping_address_2();
+            }
+
+            $addresses[] = $shipping_address;
+        }
+
+        $customer_data['address'] = $addresses;
+
+        return $customer_data;
     }
 
     /**
@@ -172,9 +239,9 @@ class HandlerOrdersRetail
             }
 
             $order_lines[] = [
-                'item_id'  => $flourish_item_id,
-                'sku'      => $sku,
-                'quantity'  => $item->get_quantity(),
+                'item_id'    => $flourish_item_id,
+                'sku'        => $sku,
+                'order_qty'  => $item->get_quantity(),
                 'unit_price' => $item->get_total() / max(1, $item->get_quantity()),
             ];
         }
@@ -286,5 +353,136 @@ class HandlerOrdersRetail
             $settingsHandler->getSetting('facility_id'),
             $this->existing_settings['item_sync_options'] ?? []
         );
+    }
+
+    /**
+     * Determine fulfillment type based on WooCommerce shipping method.
+     * Maps shipping methods to Flourish fulfillment types: delivery, pickup, or in-store.
+     */
+    private function get_fulfillment_type($wc_order)
+    {
+        $shipping_methods = $wc_order->get_shipping_methods();
+
+        if (empty($shipping_methods)) {
+            // No shipping method - default to delivery for online orders
+            return 'delivery';
+        }
+
+        foreach ($shipping_methods as $shipping_method) {
+            $method_id = $shipping_method->get_method_id();
+
+            // Map common WooCommerce shipping methods to Flourish fulfillment types
+            if (stripos($method_id, 'local_pickup') !== false || stripos($method_id, 'pickup') !== false) {
+                return 'pickup';
+            }
+        }
+
+        // Default to delivery for all other shipping methods
+        return 'delivery';
+    }
+
+    /**
+     * Calculate expected fulfillment timestamp based on fulfillment type.
+     * Checks for custom delivery date in order meta, otherwise uses reasonable defaults.
+     *
+     * @param \WC_Order $wc_order The WooCommerce order
+     * @param string $fulfillment_type The fulfillment type (delivery, pickup, in-store)
+     * @return string Formatted timestamp in ISO 8601 format with milliseconds
+     */
+    private function get_expected_fulfillment_timestamp($wc_order, $fulfillment_type)
+    {
+        // Check for custom delivery/pickup date in order meta
+        $custom_date = $wc_order->get_meta('_delivery_date');
+        if (!$custom_date) {
+            $custom_date = $wc_order->get_meta('_pickup_date');
+        }
+
+        if (!empty($custom_date)) {
+            // Use custom date if available
+            try {
+                $datetime = new \DateTime($custom_date, new \DateTimeZone('UTC'));
+                return $datetime->format('Y-m-d\TH:i:s.v\Z');
+            } catch (\Exception $e) {
+                // If parsing fails, fall through to default calculation
+            }
+        }
+
+        // Calculate default based on fulfillment type
+        $now = new \DateTime('now', new \DateTimeZone('UTC'));
+
+        if ($fulfillment_type === 'pickup') {
+            // Pickup: default to 2 hours from now (same day pickup)
+            $now->modify('+2 hours');
+        } else {
+            // Delivery: default to 3 business days from now
+            $days_added = 0;
+            while ($days_added < 3) {
+                $now->modify('+1 day');
+                // Skip weekends
+                if ($now->format('N') < 6) {
+                    $days_added++;
+                }
+            }
+        }
+
+        return $now->format('Y-m-d\TH:i:s.v\Z');
+    }
+
+    /**
+     * Extract delivery information from WooCommerce order.
+     * Includes shipping address, contact details, and delivery fee.
+     *
+     * @param \WC_Order $wc_order The WooCommerce order
+     * @return array Delivery information fields for Flourish API
+     */
+    private function get_delivery_information($wc_order)
+    {
+        $delivery_info = [];
+
+        // Build delivery address
+        $shipping_address = [
+            'address_line_1' => $wc_order->get_shipping_address_1(),
+            'address_line_2' => $wc_order->get_shipping_address_2(),
+            'city'           => $wc_order->get_shipping_city(),
+            'state'          => $wc_order->get_shipping_state(),
+            'postcode'       => $wc_order->get_shipping_postcode(),
+            'country'        => $wc_order->get_shipping_country(),
+        ];
+
+        // Only include address if we have the required fields
+        if (!empty($shipping_address['address_line_1']) &&
+            !empty($shipping_address['city']) &&
+            !empty($shipping_address['state']) &&
+            !empty($shipping_address['postcode']) &&
+            !empty($shipping_address['country'])) {
+
+            // Remove empty address_line_2 if not provided
+            if (empty($shipping_address['address_line_2'])) {
+                unset($shipping_address['address_line_2']);
+            }
+
+            $delivery_info['delivery_address'] = $shipping_address;
+        }
+
+        // Add contact information
+        $billing_phone = $wc_order->get_billing_phone();
+        if (!empty($billing_phone)) {
+            $delivery_info['delivery_contact_no'] = $billing_phone;
+            // Also use for SMS contact (WooCommerce doesn't distinguish)
+            $delivery_info['delivery_text_contact_no'] = $billing_phone;
+        }
+
+        $billing_email = $wc_order->get_billing_email();
+        if (!empty($billing_email)) {
+            $delivery_info['delivery_email'] = $billing_email;
+        }
+
+        // Add delivery fee (shipping cost)
+        $shipping_total = $wc_order->get_shipping_total();
+        if ($shipping_total > 0) {
+            $delivery_info['delivery_fee'] = (float) $shipping_total;
+        }
+
+        return $delivery_info;
     }
 }

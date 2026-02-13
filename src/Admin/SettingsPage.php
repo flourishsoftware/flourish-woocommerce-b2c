@@ -40,18 +40,19 @@ class SettingsPage
         add_filter('plugin_action_links_' . $this->plugin_basename, [$this, 'add_settings_link']);
 
         add_action('admin_menu', function () {
-            $page_hook = add_options_page(
+            add_options_page(
                 'Flourish WooCommerce B2C Settings',
                 'Flourish B2C',
                 'manage_options',
                 'flourish-woocommerce-plugin-settings',
                 [$this, 'render_settings_page']
             );
-
-            add_action('load-' . $page_hook, [$this, 'register_settings']);
         });
 
         add_action('admin_init', function () {
+            // Register settings - must be in admin_init
+            $this->register_settings();
+
             // Enqueue admin scripts and styles
             wp_enqueue_style(
                 'flourish-admin-style',
@@ -99,9 +100,21 @@ class SettingsPage
         $sanitized = [];
 
         $sanitized['api_key'] = sanitize_text_field($input['api_key'] ?? '');
-        $sanitized['url'] = esc_url_raw($input['url'] ?? '');
+        $sanitized['url'] = esc_url_raw($input['url'] ?? 'https://app.flourishsoftware.com');
         $sanitized['facility_id'] = sanitize_text_field($input['facility_id'] ?? '');
         $sanitized['minimum_age'] = absint($input['minimum_age'] ?? 21);
+        $sanitized['order_status'] = in_array($input['order_status'] ?? '', ['created', 'submitted'])
+            ? $input['order_status']
+            : 'submitted';
+
+        // Default to true for new installations, otherwise respect checkbox value
+        if (!isset($this->existing_settings['is_recreational'])) {
+            // First time saving - default to true
+            $sanitized['is_recreational'] = isset($input['is_recreational']) ? !empty($input['is_recreational']) : true;
+        } else {
+            // Setting exists - use checkbox value (unchecked = false)
+            $sanitized['is_recreational'] = !empty($input['is_recreational']);
+        }
 
         // Generate webhook key from API key
         if (!empty($sanitized['api_key'])) {
@@ -202,8 +215,9 @@ class SettingsPage
                     $settings['facility_id'] ?? ''
                 );
                 $brand_data = $api->fetch_brands();
+                // API returns: { "brand_id": 16, "brand_name": "BuildCO", "active": 1 }
                 if (is_array($brand_data)) {
-                    $available_brands = array_column($brand_data, 'name');
+                    $available_brands = array_column($brand_data, 'brand_name');
                 }
             } catch (\Exception $e) {
                 // Silently fail — brands will just be empty
@@ -215,9 +229,29 @@ class SettingsPage
         if (!empty($settings['api_key']) && !empty($settings['url'])) {
             try {
                 $api = $api ?? new FlourishAPI($settings['api_key'], $settings['url'], $settings['facility_id'] ?? '');
-                $available_facilities = $api->fetch_facilities();
+                $raw_facilities = $api->fetch_facilities();
+
+                // Normalize facility data structure
+                // API returns: { "id": "...", "facility_name": "...", "alias": "..." }
+                if (is_array($raw_facilities)) {
+                    foreach ($raw_facilities as $facility) {
+                        if (!empty($facility['id'])) {
+                            // Build display name: "Facility Name - Alias" or just "Facility Name"
+                            $display_name = $facility['facility_name'] ?? 'Unknown Facility';
+                            if (!empty($facility['alias'])) {
+                                $display_name .= ' - ' . $facility['alias'];
+                            }
+
+                            $available_facilities[] = [
+                                'id' => $facility['id'],
+                                'name' => $display_name
+                            ];
+                        }
+                    }
+                }
             } catch (\Exception $e) {
-                // Silently fail
+                // Log errors for debugging
+                error_log('Flourish API Error fetching facilities: ' . $e->getMessage());
             }
         }
 
@@ -252,9 +286,8 @@ class SettingsPage
                             <input type="url"
                                    id="url"
                                    name="flourish_woocommerce_plugin_settings[url]"
-                                   value="<?php echo esc_attr($settings['url'] ?? ''); ?>"
-                                   class="regular-text"
-                                   placeholder="https://app.flourishsoftware.com" />
+                                   value="<?php echo esc_attr($settings['url'] ?? 'https://app.flourishsoftware.com'); ?>"
+                                   class="regular-text" />
                         </td>
                     </tr>
                     <tr>
@@ -291,6 +324,34 @@ class SettingsPage
                                    max="99"
                                    class="small-text" />
                             <p class="description">Minimum age required for CBD/hemp purchases (default: 21).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="order_status">Order Status</label></th>
+                        <td>
+                            <select id="order_status" name="flourish_woocommerce_plugin_settings[order_status]">
+                                <option value="submitted" <?php selected($settings['order_status'] ?? 'submitted', 'submitted'); ?>>
+                                    Submitted (Ready to Pack)
+                                </option>
+                                <option value="created" <?php selected($settings['order_status'] ?? 'submitted', 'created'); ?>>
+                                    Created (Draft)
+                                </option>
+                            </select>
+                            <p class="description">Status for orders posted to Flourish. "Submitted" means ready to pack (recommended for most use cases).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="is_recreational">Recreational Purchases</label></th>
+                        <td>
+                            <label>
+                                <input type="checkbox"
+                                       id="is_recreational"
+                                       name="flourish_woocommerce_plugin_settings[is_recreational]"
+                                       value="1"
+                                    <?php checked(!empty($settings['is_recreational']) ? $settings['is_recreational'] : true); ?> />
+                                Mark orders as recreational (not medical)
+                            </label>
+                            <p class="description">Indicates purchases are recreational, subject to compliance rules of the facility state.</p>
                         </td>
                     </tr>
                     <tr>
