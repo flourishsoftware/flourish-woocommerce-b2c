@@ -360,9 +360,11 @@ class FlourishAPI
             throw new \Exception("Error creating customer: " . $e->getMessage());
         }
 
-        if (isset($response_data['data']['id'])) {
-            $customer['flourish_customer_id'] = $response_data['data']['id'];
+        if (!isset($response_data['data']['id'])) {
+            throw new \Exception("Customer created but no ID returned from Flourish.");
         }
+
+        $customer['flourish_customer_id'] = $response_data['data']['id'];
 
         return $customer;
     }

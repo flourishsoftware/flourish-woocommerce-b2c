@@ -104,7 +104,7 @@ class FlourishItems
     {
         $this->save_custom_fields_automated($wc_product, $product);
 
-        if (empty($item_sync_options['name']) || $item_sync_options['name']) {
+        if (!isset($item_sync_options['name']) || $item_sync_options['name'] === true) {
             $wc_product->set_name($product['name']);
         }
 
@@ -113,7 +113,7 @@ class FlourishItems
             $wc_product->set_description($product['description']);
         }
 
-        if (empty($item_sync_options['price']) || $item_sync_options['price']) {
+        if (!isset($item_sync_options['price']) || $item_sync_options['price'] === true) {
             if ($webhook_status === false) {
                 $wc_product->set_price($product['price']);
                 $wc_product->set_regular_price($product['price']);

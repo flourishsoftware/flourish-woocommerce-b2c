@@ -53,9 +53,16 @@ class HandlerOrdersRetail
      * FIX (Critical #4): Uses \Exception throughout.
      * FIX (High #10): Uses StockHelper::calculate_stock() for consistent formula.
      * FIX (High #15): Replaced deprecated FILTER_SANITIZE_STRING with sanitize_text_field().
+     * FIX: Normalize input to handle both integer ID (classic checkout) and WC_Order object (block checkout).
      */
     public function handle_order_retail($order_id)
     {
+        // Normalize input: woocommerce_checkout_order_processed passes int,
+        // woocommerce_store_api_checkout_order_processed passes WC_Order object
+        if ($order_id instanceof \WC_Order) {
+            $order_id = $order_id->get_id();
+        }
+
         $wc_order = wc_get_order($order_id);
         if (!$wc_order) {
             return;
@@ -305,7 +312,7 @@ class HandlerOrdersRetail
                 $inventory_data = $flourish_api->fetch_inventory($flourish_item_id);
 
                 foreach ($inventory_data as $inv) {
-                    if (empty($inv['sellable_qty'])) {
+                    if (!isset($inv['sellable_qty'])) {
                         continue;
                     }
 
