@@ -348,7 +348,7 @@ class SettingsPage
                                        id="is_recreational"
                                        name="flourish_woocommerce_plugin_settings[is_recreational]"
                                        value="1"
-                                    <?php checked(!empty($settings['is_recreational']) ? $settings['is_recreational'] : true); ?> />
+                                    <?php checked(isset($settings['is_recreational']) ? $settings['is_recreational'] : true); ?> />
                                 Mark orders as recreational (not medical)
                             </label>
                             <p class="description">Indicates purchases are recreational, subject to compliance rules of the facility state.</p>
