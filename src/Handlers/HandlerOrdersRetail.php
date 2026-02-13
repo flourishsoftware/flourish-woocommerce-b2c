@@ -305,7 +305,7 @@ class HandlerOrdersRetail
                 $inventory_data = $flourish_api->fetch_inventory($flourish_item_id);
 
                 foreach ($inventory_data as $inv) {
-                    if (empty($inv['sellable_qty'])) {
+                    if (!isset($inv['sellable_qty'])) {
                         continue;
                     }
 
