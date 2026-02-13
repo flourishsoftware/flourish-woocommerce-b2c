@@ -1,0 +1,23 @@
+# Dependencies
+/vendor/
+
+# Environment
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# WordPress
+wp-config.php
+
+# Build artifacts
+*.log

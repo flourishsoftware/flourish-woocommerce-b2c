@@ -1,0 +1,80 @@
+/* Flourish WooCommerce B2C Styles */
+
+/* DOB field in checkout */
+.wc-block-components-text-input input[type=date] {
+    background-color: #fff;
+    border: 1px solid hsla(0, 0%, 7%, .8);
+    border-radius: 4px;
+    box-sizing: border-box;
+    color: #2b2d2f;
+    font-family: inherit;
+    font-size: 1em;
+    height: 50px;
+    line-height: 1em;
+    margin: 0;
+    min-height: 0;
+    padding: 1em .5em;
+    width: 49%;
+}
+
+.wc-block-components-form .wc-block-components-text-input.is-active input[type=date] {
+    padding: 1.5em .5em .5em;
+}
+
+.wc-block-components-form .wc-block-components-text-input input[type=date]:focus {
+    box-shadow: 0 0 0 1px #50575e;
+    color: #2b2d2f;
+    outline: 0;
+}
+
+input[type="date"] {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    border: 1px solid #ccc;
+    padding: 8px;
+    border-radius: 4px;
+}
+
+/* Settings page warning */
+.flourish_setting_warn {
+    background-color: #fff3cd;
+    border-left: 5px solid #dba617;
+    padding: 15px;
+    margin-top: 15px;
+    font-weight: normal;
+    color: #000000;
+    border-radius: 4px;
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+/* Out of stock container */
+#out-of-stock-container .woocommerce-error {
+    background-color: #f2dede;
+    border-color: #ebccd1;
+    color: #a94442;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 15px;
+}
+
+.single_add_to_cart_button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* Hide optional text in checkout */
+#billing_company_field span.optional,
+#shipping_company_field span.optional {
+    display: none;
+}
+
+/* Disable manual variation addition */
+.add_variation_manually {
+    pointer-events: none;
+    opacity: 0.5;
+    cursor: not-allowed;
+}

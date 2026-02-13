@@ -1,0 +1,15 @@
+{
+    "name": "flourishsoftware/flourish-woocommerce-b2c",
+    "description": "A WooCommerce plugin for B2C retail sales powered by Flourish.",
+    "type": "wordpress-plugin",
+    "license": "GPL-3.0-or-later",
+    "autoload": {
+        "psr-4": {
+            "FlourishWooCommercePlugin\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=7.4",
+        "yahnis-elsts/plugin-update-checker": "^5.0"
+    }
+}
