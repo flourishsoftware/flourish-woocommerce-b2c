@@ -85,9 +85,9 @@ class HandlerOrdersRetail
             $customer = $flourish_api->get_or_create_customer_by_email($customer_data);
 
             // Build retail order
-            $order_lines = $this->get_retail_order_lines($wc_order, $flourish_api);
+            $order_data = $this->get_retail_order_lines($wc_order, $flourish_api);
 
-            if (empty($order_lines)) {
+            if (empty($order_data['order_lines'])) {
                 $wc_order->add_order_note('No valid order lines found for Flourish sync. Items may not exist in Flourish.');
                 $wc_order->save();
                 return;
@@ -99,12 +99,17 @@ class HandlerOrdersRetail
             $order_payload = [
                 'original_order_id' => (string) $wc_order->get_id(),
                 'customer_id'       => $customer['flourish_customer_id'],
-                'order_lines'       => $order_lines,
+                'order_lines'       => $order_data['order_lines'],
                 'order_timestamp'   => gmdate("Y-m-d\TH:i:s.v\Z"),
                 'order_status'      => $this->existing_settings['order_status'] ?? 'submitted',
                 'is_recreational'   => $this->existing_settings['is_recreational'] ?? true,
                 'fulfillment_type'  => $fulfillment_type,
             ];
+
+            // Add applied discounts if any exist
+            if (!empty($order_data['applied_discounts'])) {
+                $order_payload['applied_discounts'] = $order_data['applied_discounts'];
+            }
 
             // Add total_paid for paid orders (online payments)
             // TODO: Uncomment when Flourish handles paid status correctly
@@ -208,13 +213,20 @@ class HandlerOrdersRetail
     }
 
     /**
-     * Build retail order lines, validating items exist in Flourish.
+     * Build retail order lines and applied discounts, validating items exist in Flourish.
+     *
+     * Returns array with:
+     * - order_lines: items with original unit prices (before discounts)
+     * - applied_discounts: discount information per SKU using Flourish's predefined discount types
      *
      * Ported from B2B PR #5 fix for mixed CBD/THC orders.
+     * FIX: Track discounts separately from unit prices to match Flourish API v2 expectations.
+     * Uses discount_id 4 (Custom Line Dollar Discount) to avoid mapping between WooCommerce and Flourish discount IDs.
      */
     private function get_retail_order_lines($wc_order, FlourishAPI $flourish_api)
     {
         $order_lines = [];
+        $applied_discounts = [];
 
         foreach ($wc_order->get_items() as $item) {
             $product = $item->get_product();
@@ -245,15 +257,36 @@ class HandlerOrdersRetail
                 continue;
             }
 
+            $quantity = $item->get_quantity();
+            $subtotal = (float) $item->get_subtotal();
+            $total = (float) $item->get_total();
+            $unit_price = $subtotal / max(1, $quantity);
+            $discount_amount = $subtotal - $total;
+
             $order_lines[] = [
                 'item_id'    => $flourish_item_id,
                 'sku'        => $sku,
-                'order_qty'  => $item->get_quantity(),
-                'unit_price' => $item->get_total() / max(1, $item->get_quantity()),
+                'order_qty'  => $quantity,
+                'unit_price' => round($unit_price, 2),
             ];
+
+            // Track discount if one exists for this item
+            // Use discount_id 4 (Custom Line Dollar Discount) from Flourish's discount_v2 table
+            if ($discount_amount > 0) {
+                $applied_discounts[] = [
+                    'method'        => 'dollar',
+                    'promo_code'    => null,
+                    'amount'        => round($discount_amount, 2),
+                    'discount_id'   => '4',
+                    'sku'           => $sku,
+                ];
+            }
         }
 
-        return $order_lines;
+        return [
+            'order_lines'       => $order_lines,
+            'applied_discounts' => $applied_discounts,
+        ];
     }
 
     private function get_flourish_item_ids_from_order($order_id)
