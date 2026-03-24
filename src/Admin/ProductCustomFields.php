@@ -2,8 +2,6 @@
 
 namespace FlourishWooCommercePlugin\Admin;
 
-use FlourishWooCommercePlugin\Importer\FlourishItems;
-
 defined('ABSPATH') || exit;
 
 class ProductCustomFields
@@ -178,9 +176,6 @@ class ProductCustomFields
         }
 
         wc_delete_product_transients($product->get_id());
-
-        $flourish_items = new FlourishItems($product);
-        $flourish_items->create_attributes_update($product);
     }
 
     public function validate_min_max_order_quantity($passed, $product_id, $quantity)
