@@ -111,6 +111,9 @@ class HandlerOrdersRetail
                 $order_payload['applied_discounts'] = $order_data['applied_discounts'];
             }
 
+            // DEBUG: Log the payload before sending
+            error_log('Flourish Order Payload: ' . json_encode($order_payload, JSON_PRETTY_PRINT));
+
             // Add total_paid for paid orders (online payments)
             // TODO: Uncomment when Flourish handles paid status correctly
             // if ($wc_order->is_paid()) {
