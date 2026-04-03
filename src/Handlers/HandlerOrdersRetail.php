@@ -263,27 +263,18 @@ class HandlerOrdersRetail
             $quantity = $item->get_quantity();
             $subtotal = (float) $item->get_subtotal();
             $total = (float) $item->get_total();
-            $unit_price = $subtotal / max(1, $quantity);
-            $discount_amount = $subtotal - $total;
+            // Send post-discount unit price so Flourish line totals match WooCommerce.
+            // applied_discounts is not used because the Flourish API double-counts:
+            // it applies the discount to line totals AND subtracts it from the order total.
+            // TODO: Revisit once Flourish API team clarifies expected discount behavior.
+            $unit_price = round($total / max(1, $quantity), 2);
 
             $order_lines[] = [
                 'item_id'    => $flourish_item_id,
                 'sku'        => $sku,
                 'order_qty'  => $quantity,
-                'unit_price' => round($unit_price, 2),
+                'unit_price' => $unit_price,
             ];
-
-            // Track discount if one exists for this item
-            // Use discount_id 4 (Custom Line Dollar Discount) from Flourish's discount_v2 table
-            if ($discount_amount > 0) {
-                $applied_discounts[] = [
-                    'method'        => 'dollar',
-                    'promo_code'    => null,
-                    'amount'        => round($discount_amount, 2),
-                    'discount_id'   => '4',
-                    'sku'           => $sku,
-                ];
-            }
         }
 
         return [
