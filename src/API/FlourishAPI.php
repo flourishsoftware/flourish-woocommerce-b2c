@@ -371,7 +371,7 @@ class FlourishAPI
 
     public function create_retail_order($order)
     {
-        $api_url = $this->url . "/external/api/v2/retail-orders";
+        $api_url = $this->url . "/external/api/v1/retail-orders";
         $headers = $this->get_headers(true, true);
 
         try {
