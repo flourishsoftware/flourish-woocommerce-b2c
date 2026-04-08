@@ -6,6 +6,7 @@ defined('ABSPATH') || exit;
 
 use FlourishWooCommercePlugin\API\FlourishAPI;
 use FlourishWooCommercePlugin\Handlers\SettingsHandler;
+use FlourishWooCommercePlugin\Importer\FlourishDiscounts;
 
 /**
  * Flourish settings page for WooCommerce B2C retail.
@@ -36,6 +37,7 @@ class SettingsPage
     {
         add_action('add_meta_boxes', [$this, 'add_refresh_inventory_button_meta_box']);
         add_action('wp_ajax_fetch_inventory', [$this, 'fetch_inventory_callback']);
+        add_action('wp_ajax_sync_flourish_discounts', [$this, 'sync_discounts_callback']);
 
         add_filter('plugin_action_links_' . $this->plugin_basename, [$this, 'add_settings_link']);
 
@@ -174,6 +176,44 @@ class SettingsPage
         }
     }
 
+    public function sync_discounts_callback()
+    {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized.');
+        }
+
+        check_ajax_referer('flourish_sync_discounts', 'nonce');
+
+        $settings = get_option('flourish_woocommerce_plugin_settings', []);
+        if (empty($settings['api_key']) || empty($settings['url'])) {
+            wp_send_json_error('API key and URL are required.');
+        }
+
+        try {
+            $flourish_api = new FlourishAPI(
+                $settings['api_key'],
+                $settings['url'],
+                $settings['facility_id'] ?? '',
+                $settings['item_sync_options'] ?? []
+            );
+
+            $discounts = $flourish_api->fetch_eligible_discounts();
+            $importer = new FlourishDiscounts($discounts);
+            $count = $importer->save_as_woocommerce_coupons();
+
+            $total = count($discounts);
+            $skipped = $total - $count;
+            $message = "Synced {$count} discount(s) as WooCommerce coupons.";
+            if ($skipped > 0) {
+                $message .= " Skipped {$skipped} auto-applied discount(s) without promo codes.";
+            }
+
+            wp_send_json_success($message);
+        } catch (\Exception $e) {
+            wp_send_json_error('Error: ' . $e->getMessage());
+        }
+    }
+
     public function add_refresh_inventory_button_meta_box()
     {
         add_meta_box(
@@ -204,6 +244,7 @@ class SettingsPage
     {
         $settings = $this->existing_settings;
         $nonce = wp_create_nonce('flourish_fetch_inventory');
+        $discount_nonce = wp_create_nonce('flourish_sync_discounts');
 
         // Fetch available brands if API is configured
         $available_brands = [];
@@ -458,6 +499,14 @@ class SettingsPage
             </button>
             <div id="flourish-fetch-result" style="margin-top: 10px;"></div>
 
+            <hr>
+            <h2>Sync Discounts</h2>
+            <p>Click below to sync eligible discounts from Flourish as WooCommerce coupons.</p>
+            <button type="button" class="button button-primary" id="flourish-sync-discounts">
+                Sync Discounts from Flourish
+            </button>
+            <div id="flourish-sync-discounts-result" style="margin-top: 10px;"></div>
+
             <script>
             jQuery(document).ready(function($) {
                 $('#flourish-fetch-inventory').on('click', function() {
@@ -486,6 +535,36 @@ class SettingsPage
                         },
                         complete: function() {
                             $btn.prop('disabled', false).text('Fetch Inventory from Flourish');
+                        }
+                    });
+                });
+
+                $('#flourish-sync-discounts').on('click', function() {
+                    var $btn = $(this);
+                    var $result = $('#flourish-sync-discounts-result');
+
+                    $btn.prop('disabled', true).text('Syncing...');
+                    $result.html('<p>Syncing discounts from Flourish...</p>');
+
+                    $.ajax({
+                        url: ajaxurl,
+                        type: 'POST',
+                        data: {
+                            action: 'sync_flourish_discounts',
+                            nonce: '<?php echo esc_js($discount_nonce); ?>'
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                $result.html('<div class="notice notice-success"><p>' + response.data + '</p></div>');
+                            } else {
+                                $result.html('<div class="notice notice-error"><p>' + response.data + '</p></div>');
+                            }
+                        },
+                        error: function() {
+                            $result.html('<div class="notice notice-error"><p>Request failed. Please try again.</p></div>');
+                        },
+                        complete: function() {
+                            $btn.prop('disabled', false).text('Sync Discounts from Flourish');
                         }
                     });
                 });
