@@ -231,6 +231,10 @@ class HandlerOrdersRetail
         $order_lines = [];
         $applied_discounts = [];
 
+        // Check if any WooCommerce coupons match Flourish promo codes
+        $matched_promo_codes = $this->get_matched_promo_codes($wc_order, $flourish_api);
+        $has_promo_match = !empty($matched_promo_codes);
+
         foreach ($wc_order->get_items() as $item) {
             $product = $item->get_product();
             if (!$product) {
@@ -263,11 +267,15 @@ class HandlerOrdersRetail
             $quantity = $item->get_quantity();
             $subtotal = (float) $item->get_subtotal();
             $total = (float) $item->get_total();
-            // Send post-discount unit price so Flourish line totals match WooCommerce.
-            // applied_discounts is not used because the Flourish API double-counts:
-            // it applies the discount to line totals AND subtracts it from the order total.
-            // TODO: Revisit once Flourish API team clarifies expected discount behavior.
-            $unit_price = round($total / max(1, $quantity), 2);
+
+            // When a Flourish promo code matches, send pre-discount prices and let
+            // Flourish apply the discount via its v2 discount engine.
+            // Otherwise, send post-discount prices (Flourish sees the final amount).
+            if ($has_promo_match) {
+                $unit_price = round($subtotal / max(1, $quantity), 2);
+            } else {
+                $unit_price = round($total / max(1, $quantity), 2);
+            }
 
             $order_lines[] = [
                 'item_id'    => $flourish_item_id,
@@ -277,10 +285,65 @@ class HandlerOrdersRetail
             ];
         }
 
+        // Send matched promo codes so Flourish's discount engine applies them
+        foreach ($matched_promo_codes as $promo_code) {
+            $applied_discounts[] = [
+                'promo_code' => $promo_code,
+            ];
+        }
+
+        // Log unmatched coupons as order notes
+        $all_coupon_codes = $wc_order->get_coupon_codes();
+        $matched_lower = array_map('strtolower', $matched_promo_codes);
+        foreach ($all_coupon_codes as $code) {
+            if (!in_array(strtolower($code), $matched_lower)) {
+                $wc_order->add_order_note(
+                    sprintf('Coupon "%s" is not a recognized Flourish promo code; discount applied via post-discount pricing.', $code)
+                );
+            }
+        }
+
         return [
             'order_lines'       => $order_lines,
             'applied_discounts' => $applied_discounts,
         ];
+    }
+
+    /**
+     * Match WooCommerce coupon codes against Flourish promo codes.
+     * Returns array of matched Flourish promo codes.
+     */
+    private function get_matched_promo_codes($wc_order, FlourishAPI $flourish_api)
+    {
+        $coupon_codes = $wc_order->get_coupon_codes();
+        if (empty($coupon_codes)) {
+            return [];
+        }
+
+        try {
+            $discounts = $flourish_api->fetch_eligible_discounts();
+        } catch (\Exception $e) {
+            error_log('Flourish: Could not fetch eligible discounts for promo matching: ' . $e->getMessage());
+            return [];
+        }
+
+        // Build lookup of Flourish promo codes (case-insensitive)
+        $flourish_promos = [];
+        foreach ($discounts as $discount) {
+            if (!empty($discount['promo_code'])) {
+                $flourish_promos[strtolower($discount['promo_code'])] = $discount['promo_code'];
+            }
+        }
+
+        $matched = [];
+        foreach ($coupon_codes as $code) {
+            $key = strtolower($code);
+            if (isset($flourish_promos[$key])) {
+                $matched[] = $flourish_promos[$key];
+            }
+        }
+
+        return $matched;
     }
 
     private function get_flourish_item_ids_from_order($order_id)

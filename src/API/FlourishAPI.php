@@ -371,7 +371,7 @@ class FlourishAPI
 
     public function create_retail_order($order)
     {
-        $api_url = $this->url . "/external/api/v1/retail-orders";
+        $api_url = $this->url . "/external/api/v2/retail-orders";
         $headers = $this->get_headers(true, true);
 
         try {
@@ -453,6 +453,35 @@ class FlourishAPI
         }
 
         return $brands;
+    }
+
+    public function fetch_eligible_discounts()
+    {
+        $discounts = [];
+        $offset = 0;
+        $limit = self::API_LIMIT;
+        $has_more = true;
+
+        while ($has_more) {
+            $api_url = $this->url . "/external/api/v1/retail-discounts?offset={$offset}&limit={$limit}";
+            $headers = $this->get_headers(true);
+
+            try {
+                $response_http = HttpRequestHelper::make_request($api_url, 'GET', $headers);
+                $response_data = HttpRequestHelper::validate_response($response_http);
+            } catch (\Exception $e) {
+                throw new \Exception("Error fetching eligible discounts: " . $e->getMessage());
+            }
+
+            if (isset($response_data['data']) && is_array($response_data['data'])) {
+                $discounts = array_merge($discounts, $response_data['data']);
+            }
+
+            $has_more = isset($response_data['meta']['next']) && !empty($response_data['meta']['next']);
+            $offset += $limit;
+        }
+
+        return $discounts;
     }
 
     public function fetch_uoms()
