@@ -5,6 +5,7 @@ namespace FlourishWooCommercePlugin\Handlers;
 defined('ABSPATH') || exit;
 
 use FlourishWooCommercePlugin\API\FlourishAPI;
+use FlourishWooCommercePlugin\Helpers\HttpRequestHelper;
 use FlourishWooCommercePlugin\Helpers\StockHelper;
 
 /**
@@ -55,8 +56,18 @@ class HandlerOrdersCancel
             $flourish_api = $this->initializeFlourishAPI();
             $order_data = $flourish_api->get_order_by_id($flourish_order_id, 'retail-orders');
             $order_status = $order_data['order_status'] ?? null;
+            $is_preauth_order = (bool) $wc_order->get_meta('_flourish_payment_reference_id');
 
-            if ($order_status === 'Created') {
+            if ($order_status === 'Cancelled') {
+                // Cancelled in Flourish first (e.g. the webhook); Flourish voids any pre-auth hold
+                $wc_order->add_order_note('Order is cancelled in Flourish.');
+            } elseif ($is_preauth_order) {
+                // The external API can't cancel or void an AeroPay hold, so staff must cancel in Flourish
+                $message = 'This order has a pre-authorized payment. Cancel it in Flourish to release the hold; '
+                    . "cancelling in WooCommerce does not cancel it in Flourish (Flourish status: {$order_status}).";
+                $wc_order->add_order_note($message);
+                HttpRequestHelper::send_order_failure_email_to_admin($message, $order_id);
+            } elseif ($order_status === 'Created') {
                 $cancel_payload = [
                     'original_order_id' => (string) $wc_order->get_id(),
                     'order_timestamp'   => gmdate("Y-m-d\TH:i:s.v\Z"),
@@ -64,7 +75,15 @@ class HandlerOrdersCancel
                 ];
 
                 $flourish_api->update_retail_order($cancel_payload, $flourish_order_id);
-                $wc_order->add_order_note("Order cancelled in Flourish.");
+
+                // Confirm the cancel took effect rather than assuming it did
+                $updated_order = $flourish_api->get_order_by_id($flourish_order_id, 'retail-orders');
+                $updated_status = $updated_order['order_status'] ?? null;
+                if ($updated_status === 'Cancelled') {
+                    $wc_order->add_order_note('Order cancelled in Flourish.');
+                } else {
+                    $wc_order->add_order_note("Flourish did not cancel this order (status: {$updated_status}). Cancel it in Flourish.");
+                }
             } else {
                 $wc_order->add_order_note("Cannot cancel in Flourish — order status is: {$order_status}");
             }

@@ -203,10 +203,21 @@ class FlourishWebhook
             return new WP_REST_Response(['message' => 'Retail order not found.'], 404);
         }
 
-        $new_status = 'created';
+        // Orders sent with a pre-authorized payment stay on-hold until Flourish
+        // captures the payment, then follow Completed / Cancelled only.
+        $is_preauth_order = (bool) $wc_order->get_meta('_flourish_payment_reference_id');
+        if ($is_preauth_order) {
+            $this->handle_preauth_payment_status($wc_order, $data['payment_status'] ?? '');
+        }
+
+        $new_status = $is_preauth_order ? null : 'created';
         switch ($data['order_status']) {
             case 'Packed':
             case 'Out for Delivery':
+                if (!$is_preauth_order) {
+                    $new_status = 'completed';
+                }
+                break;
             case 'Completed':
                 $new_status = 'completed';
                 break;
@@ -216,9 +227,37 @@ class FlourishWebhook
         }
 
         $this->sync_stock_from_flourish($wc_order, $post_id);
-        $wc_order->update_status($new_status, 'Flourish retail order status: ' . $data['order_status'] . '. Updated by webhook.');
+
+        $note = 'Flourish retail order status: ' . $data['order_status'] . '. Updated by webhook.';
+        if ($new_status === null) {
+            $wc_order->add_order_note($note);
+        } else {
+            $wc_order->update_status($new_status, $note);
+        }
 
         return new WP_REST_Response(['message' => 'Retail order handled successfully.'], 200);
+    }
+
+    /**
+     * Mark a pre-auth order paid once Flourish reports the payment captured
+     * (staff confirm payment in Flourish). Notes other payment status changes.
+     */
+    private function handle_preauth_payment_status($wc_order, $payment_status)
+    {
+        if ($payment_status === '' || $payment_status === $wc_order->get_meta('_flourish_payment_status_seen')) {
+            return;
+        }
+
+        $wc_order->update_meta_data('_flourish_payment_status_seen', $payment_status);
+        $wc_order->save();
+
+        if (strcasecmp($payment_status, 'Paid') === 0 && !$wc_order->is_paid()) {
+            $wc_order->payment_complete($wc_order->get_meta('_flourish_payment_reference_id'));
+            $wc_order->add_order_note('Payment captured in Flourish.');
+            return;
+        }
+
+        $wc_order->add_order_note("Flourish payment status: {$payment_status}.");
     }
 
     private function handle_order($data)

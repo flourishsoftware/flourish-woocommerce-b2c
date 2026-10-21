@@ -118,6 +118,14 @@ class SettingsPage
             $sanitized['is_recreational'] = !empty($input['is_recreational']);
         }
 
+        $sanitized['shipping_fulfillment_type'] = in_array($input['shipping_fulfillment_type'] ?? '', ['delivery', 'postal shipping'])
+            ? $input['shipping_fulfillment_type']
+            : 'delivery';
+
+        // Pre-authorized payments
+        $sanitized['send_payment_data'] = !empty($input['send_payment_data']);
+        $sanitized['preauth_gateway_id'] = sanitize_key($input['preauth_gateway_id'] ?? '');
+
         // Generate webhook key from API key
         if (!empty($sanitized['api_key'])) {
             $sanitized['webhook_key'] = hash('sha256', $sanitized['api_key'] . wp_salt());
@@ -382,6 +390,20 @@ class SettingsPage
                         </td>
                     </tr>
                     <tr>
+                        <th scope="row"><label for="shipping_fulfillment_type">Shipped Orders</label></th>
+                        <td>
+                            <select id="shipping_fulfillment_type" name="flourish_woocommerce_plugin_settings[shipping_fulfillment_type]">
+                                <option value="delivery" <?php selected($settings['shipping_fulfillment_type'] ?? 'delivery', 'delivery'); ?>>
+                                    Delivery
+                                </option>
+                                <option value="postal shipping" <?php selected($settings['shipping_fulfillment_type'] ?? 'delivery', 'postal shipping'); ?>>
+                                    Postal Shipping
+                                </option>
+                            </select>
+                            <p class="description">Flourish fulfillment type for orders with a shipping method other than local pickup.</p>
+                        </td>
+                    </tr>
+                    <tr>
                         <th scope="row"><label for="is_recreational">Recreational Purchases</label></th>
                         <td>
                             <label>
@@ -414,6 +436,35 @@ class SettingsPage
                         </td>
                     </tr>
                     <?php endif; ?>
+                </table>
+
+                <h2>Pre-Authorized Payments</h2>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="send_payment_data">Send Payment to Flourish</label></th>
+                        <td>
+                            <label>
+                                <input type="checkbox"
+                                       id="send_payment_data"
+                                       name="flourish_woocommerce_plugin_settings[send_payment_data]"
+                                       value="1"
+                                    <?php checked(!empty($settings['send_payment_data'])); ?> />
+                                Send pre-authorized payments with the order
+                            </label>
+                            <p class="description">Flourish records the hold and captures it when staff confirm payment. Requires AeroPay to be configured for the facility in Flourish.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="preauth_gateway_id">Pre-Auth Gateway ID</label></th>
+                        <td>
+                            <input type="text"
+                                   id="preauth_gateway_id"
+                                   name="flourish_woocommerce_plugin_settings[preauth_gateway_id]"
+                                   value="<?php echo esc_attr($settings['preauth_gateway_id'] ?? ''); ?>"
+                                   class="regular-text" />
+                            <p class="description">WooCommerce payment method ID of the gateway that pre-authorizes at checkout. Orders paid with it sync to Flourish after the hold is authorized.</p>
+                        </td>
+                    </tr>
                 </table>
 
                 <h2>Item Sync Options</h2>
