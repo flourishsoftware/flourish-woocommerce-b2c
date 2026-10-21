@@ -99,8 +99,7 @@ do_action('flourish_payment_authorized', $order);
 ### Order lifecycle
 
 - **Packed / Out for Delivery** in Flourish: the WooCommerce order stays `on-hold` (note added).
-- **Payment confirmed** in Flourish: the order is marked paid (`processing`) with the pre-auth ID as its transaction ID.
-- **Completed** in Flourish: `completed`.
+- **Payment confirmed** in Flourish (after packing): Flourish captures the hold and completes the order. The WooCommerce order is marked paid with the pre-auth ID as its transaction ID, then `completed`.
 - **Cancel pre-auth orders in Flourish**, which releases the hold. Cancelling in WooCommerce doesn't cancel the Flourish order; the plugin adds a note and emails the site admin.
 
 ## Requirements
