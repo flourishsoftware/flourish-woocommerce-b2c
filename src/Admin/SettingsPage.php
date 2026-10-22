@@ -122,7 +122,7 @@ class SettingsPage
             ? $input['shipping_fulfillment_type']
             : 'delivery';
 
-        // Pre-authorized payments
+        // AeroPay payments captured in WooCommerce
         $sanitized['send_payment_data'] = !empty($input['send_payment_data']);
         $sanitized['preauth_gateway_id'] = sanitize_key($input['preauth_gateway_id'] ?? '');
 
@@ -438,10 +438,10 @@ class SettingsPage
                     <?php endif; ?>
                 </table>
 
-                <h2>Pre-Authorized Payments</h2>
+                <h2>AeroPay Payments</h2>
                 <table class="form-table">
                     <tr>
-                        <th scope="row"><label for="send_payment_data">Send Payment to Flourish</label></th>
+                        <th scope="row"><label for="send_payment_data">Send Payments to Flourish</label></th>
                         <td>
                             <label>
                                 <input type="checkbox"
@@ -449,20 +449,20 @@ class SettingsPage
                                        name="flourish_woocommerce_plugin_settings[send_payment_data]"
                                        value="1"
                                     <?php checked(!empty($settings['send_payment_data'])); ?> />
-                                Send pre-authorized payments with the order
+                                Record payments captured in WooCommerce on the Flourish order
                             </label>
-                            <p class="description">Flourish records the hold and captures it when staff confirm payment. Requires AeroPay to be configured for the facility in Flourish.</p>
+                            <p class="description">Orders sync to Flourish once AeroPay authorizes them; the payment is sent as paid when staff confirm it in WooCommerce. Requires AeroPay to be enabled as a payment type for the facility in Flourish.</p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row"><label for="preauth_gateway_id">Pre-Auth Gateway ID</label></th>
+                        <th scope="row"><label for="preauth_gateway_id">AeroPay Gateway ID</label></th>
                         <td>
                             <input type="text"
                                    id="preauth_gateway_id"
                                    name="flourish_woocommerce_plugin_settings[preauth_gateway_id]"
                                    value="<?php echo esc_attr($settings['preauth_gateway_id'] ?? ''); ?>"
                                    class="regular-text" />
-                            <p class="description">WooCommerce payment method ID of the gateway that pre-authorizes at checkout. Orders paid with it sync to Flourish after the hold is authorized.</p>
+                            <p class="description">WooCommerce payment method ID of the AeroPay gateway.</p>
                         </td>
                     </tr>
                 </table>

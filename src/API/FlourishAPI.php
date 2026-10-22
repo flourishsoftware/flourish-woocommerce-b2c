@@ -407,6 +407,29 @@ class FlourishAPI
         return $response_data['data']['id'];
     }
 
+    /**
+     * Record a payment on an existing retail order (POST /v2/retail-orders/{id}/payment).
+     * Returns the Flourish payment transaction ID.
+     */
+    public function create_retail_order_payment($flourish_order_id, $payment)
+    {
+        $api_url = $this->url . "/external/api/v2/retail-orders/{$flourish_order_id}/payment";
+        $headers = $this->get_headers(true, true);
+
+        try {
+            $response_http = HttpRequestHelper::make_request($api_url, 'POST', $headers, json_encode($payment));
+            $response_data = HttpRequestHelper::validate_response($response_http);
+        } catch (\Exception $e) {
+            throw new \Exception("Error recording retail order payment: " . $e->getMessage());
+        }
+
+        if (empty($response_data['success'])) {
+            throw new \Exception("Retail order payment was not recorded by Flourish.");
+        }
+
+        return $response_data['payment_transaction_id'] ?? null;
+    }
+
     public function get_order_by_id($order_id, $order_type_api)
     {
         $api_url = $this->url . "/external/api/v1/{$order_type_api}/{$order_id}";

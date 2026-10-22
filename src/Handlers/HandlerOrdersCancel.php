@@ -56,15 +56,16 @@ class HandlerOrdersCancel
             $flourish_api = $this->initializeFlourishAPI();
             $order_data = $flourish_api->get_order_by_id($flourish_order_id, 'retail-orders');
             $order_status = $order_data['order_status'] ?? null;
-            $is_preauth_order = (bool) $wc_order->get_meta('_flourish_payment_reference_id');
+            $is_gateway_order = HandlerOrdersPayment::is_gateway_order($wc_order, $this->existing_settings);
 
             if ($order_status === 'Cancelled') {
-                // Cancelled in Flourish first (e.g. the webhook); Flourish voids any pre-auth hold
+                // Cancelled in Flourish first (e.g. the webhook)
                 $wc_order->add_order_note('Order is cancelled in Flourish.');
-            } elseif ($is_preauth_order) {
-                // The external API can't cancel or void an AeroPay hold, so staff must cancel in Flourish
-                $message = 'This order has a pre-authorized payment. Cancel it in Flourish to release the hold; '
-                    . "cancelling in WooCommerce does not cancel it in Flourish (Flourish status: {$order_status}).";
+            } elseif ($is_gateway_order) {
+                // The external API can't cancel orders, so staff cancel in Flourish too.
+                // The AeroPay gateway releases its own hold.
+                $message = 'Cancelling in WooCommerce does not cancel the order in Flourish. '
+                    . "Cancel it in Flourish as well (Flourish status: {$order_status}).";
                 $wc_order->add_order_note($message);
                 HttpRequestHelper::send_order_failure_email_to_admin($message, $order_id);
             } elseif ($order_status === 'Created') {

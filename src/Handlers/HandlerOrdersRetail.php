@@ -34,15 +34,15 @@ class HandlerOrdersRetail
         // Block-based checkout hook (WooCommerce Blocks)
         add_action('woocommerce_store_api_checkout_order_processed', [$this, 'handle_checkout_order'], 10, 1);
 
-        // Fired by a pre-auth payment gateway once the hold exists and the
-        // _flourish_payment_* order meta is written. See README "Payment Pre-Authorization".
+        // Fired by the AeroPay gateway once the pre-auth hold exists.
+        // See README "AeroPay Payments".
         add_action('flourish_payment_authorized', [$this, 'handle_order_retail'], 10, 1);
     }
 
     /**
      * Checkout hooks fire before the gateway processes payment. Orders paid
-     * with the configured pre-auth gateway wait for flourish_payment_authorized
-     * so the hold can be sent with the order.
+     * with the configured AeroPay gateway wait for flourish_payment_authorized
+     * so failed or abandoned payments never reach Flourish.
      */
     public function handle_checkout_order($order_id)
     {
@@ -60,14 +60,7 @@ class HandlerOrdersRetail
 
     private function awaits_payment_authorization($wc_order)
     {
-        if (empty($this->existing_settings['send_payment_data'])) {
-            return false;
-        }
-
-        $gateway_id = $this->existing_settings['preauth_gateway_id'] ?? '';
-        return $gateway_id !== ''
-            && $wc_order->get_payment_method() === $gateway_id
-            && !$wc_order->get_meta('_flourish_payment_reference_id');
+        return HandlerOrdersPayment::is_gateway_order($wc_order, $this->existing_settings);
     }
 
     /**
@@ -146,18 +139,8 @@ class HandlerOrdersRetail
                 $order_payload['applied_discounts'] = $order_data['applied_discounts'];
             }
 
-            // Add the pre-authorized payment, if the gateway recorded one
-            $payment = $this->build_payment_data($wc_order);
-            if ($payment) {
-                $order_payload['payment'] = $payment;
-            }
-
-            // DEBUG: Log the payload before sending (raw processor response redacted)
-            $log_payload = $order_payload;
-            if (isset($log_payload['payment']['processor_data'])) {
-                $log_payload['payment']['processor_data'] = '[redacted]';
-            }
-            error_log('Flourish Order Payload: ' . json_encode($log_payload, JSON_PRETTY_PRINT));
+            // DEBUG: Log the payload before sending
+            error_log('Flourish Order Payload: ' . json_encode($order_payload, JSON_PRETTY_PRINT));
 
             // Add expected timestamp based on fulfillment type
             $expected_timestamp = $this->get_expected_fulfillment_timestamp($wc_order, $fulfillment_type);
@@ -198,69 +181,6 @@ class HandlerOrdersRetail
 
             HttpRequestHelper::send_order_failure_email_to_admin($e->getMessage(), $order_id);
         }
-    }
-
-    /**
-     * Build the retail order `payment` object from the _flourish_payment_* meta
-     * written by a pre-auth gateway. Returns null when sending payment data is
-     * disabled or the order has no recorded hold, so the order is created as
-     * Awaiting Payment.
-     *
-     * @throws \Exception When the recorded payment is invalid.
-     */
-    private function build_payment_data($wc_order)
-    {
-        if (empty($this->existing_settings['send_payment_data'])) {
-            return null;
-        }
-
-        $reference_id = (string) $wc_order->get_meta('_flourish_payment_reference_id');
-        if ($reference_id === '') {
-            return null;
-        }
-
-        $meta_amount = $wc_order->get_meta('_flourish_payment_amount');
-        $amount = round((float) ($meta_amount !== '' ? $meta_amount : $wc_order->get_total()), 2);
-        if ($amount <= 0) {
-            throw new \Exception("Pre-authorized payment amount must be greater than zero (got {$amount}).");
-        }
-
-        $payment = [
-            'status'       => $wc_order->get_meta('_flourish_payment_status') ?: 'preauthorized',
-            'method'       => $wc_order->get_meta('_flourish_payment_method') ?: 'aeropay',
-            'amount'       => $amount,
-            'reference_id' => $reference_id,
-        ];
-
-        $tip_amount = $wc_order->get_meta('_flourish_payment_tip_amount');
-        if ($tip_amount !== '') {
-            $tip_amount = round((float) $tip_amount, 2);
-            if ($tip_amount < 0 || $tip_amount > $amount) {
-                throw new \Exception("Tip amount ({$tip_amount}) must be between 0 and the payment amount ({$amount}).");
-            }
-            $payment['tip_amount'] = $tip_amount;
-        }
-
-        $expires_at = $wc_order->get_meta('_flourish_payment_expires_at');
-        if (!empty($expires_at)) {
-            $payment['preauth_expires_at'] = (string) $expires_at;
-        }
-
-        $processor_data = $wc_order->get_meta('_flourish_payment_processor_data');
-        if (!empty($processor_data)) {
-            $payment['processor_data'] = is_string($processor_data) ? $processor_data : wp_json_encode($processor_data);
-        }
-
-        $order_total = round((float) $wc_order->get_total(), 2);
-        if (abs($amount - $order_total) > 0.01) {
-            $wc_order->add_order_note(sprintf(
-                'Pre-authorized amount (%s) differs from the order total (%s). Flourish adjusts the hold to its order total at capture.',
-                $amount,
-                $order_total
-            ));
-        }
-
-        return $payment;
     }
 
     private function build_customer_data($wc_order, $dob)
