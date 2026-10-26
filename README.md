@@ -116,6 +116,44 @@ Notes:
 - **Cancel in both places.** The gateway releases the hold. Cancelling in WooCommerce doesn't cancel the Flourish order, so the plugin adds a note and emails the site admin to cancel it in Flourish.
 - Flourish's Packed and Out for Delivery statuses don't change these WooCommerce orders. Completed and Cancelled do.
 
+## Flourish API Access
+
+### Endpoints
+
+The plugin calls these Flourish external API endpoints, so the API key needs access to each one. Requests send the key in the `x-api-key` header and, where the endpoint is facility-scoped, the selected facility in the `FacilityID` header.
+
+| Endpoint | Method + path | Used for |
+|---|---|---|
+| PostRetailOrderV2 | `POST /external/api/v2/retail-orders` | Sending WooCommerce orders to Flourish |
+| PostRetailOrderPaymentV2 | `POST /external/api/v2/retail-orders/{id}/payment` | Recording payments on the Flourish order |
+| GetRetailOrder | `GET /external/api/v1/retail-orders/{id}` | Checking the Flourish status before and after a cancel |
+| PutRetailOrder | `PUT /external/api/v1/retail-orders/{id}` | Cancelling orders that are still Created in Flourish |
+| GetEligibleDiscounts | `GET /external/api/v1/retail-discounts` | Discount sync and promo code matching at order sync |
+| GetRetailCustomers | `GET /external/api/v1/customers?email=` | Finding the customer by email |
+| PostRetailCustomer | `POST /external/api/v1/customers` | Creating the customer if none exists |
+| GetItems | `GET /external/api/v1/items` | Product import and SKU checks |
+| GetInventorySummary | `GET /external/api/v1/inventory/summary` | Stock levels for import, webhooks and cancellations |
+| GetBrands | `GET /external/api/v1/brands` | Brand filter options on the settings page |
+| GetFacilities | `GET /external/api/v1/facilities` | Facility picker on the settings page |
+
+### Webhooks
+
+Flourish sends webhooks to:
+
+```
+https://<your-site>/wp-json/flourish-woocommerce-plugin/v1/webhook
+```
+
+The settings page shows the exact URL. Each request must include an `auth_signature` header: the HMAC-SHA256 of the raw request body, keyed with the **Webhook Key** from the plugin settings. Requests with a missing or invalid signature are rejected.
+
+Subscribe to these resource types in Flourish:
+
+| Resource type | What the plugin does |
+|---|---|
+| `item` | Creates or updates the WooCommerce product. Skips items that aren't e-commerce active, have no SKU, or don't match the brand filter |
+| `inventory_summary` | Updates the product's stock level by SKU |
+| `retail_order` | Updates the WooCommerce order status and refreshes stock for its items. Packed and Out for Delivery → `completed` (except AeroPay gateway orders), Completed → `completed`, Cancelled → `cancelled` |
+
 ## Requirements
 
 - WordPress 5.0 or higher
