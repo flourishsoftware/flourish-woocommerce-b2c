@@ -13,6 +13,7 @@ use FlourishWooCommercePlugin\Handlers\HandlerOrdersRetail;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersCancel;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersPayment;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersSyncNow;
+use FlourishWooCommercePlugin\Importer\FlourishItemImages;
 
 /**
  * Registers all plugin services and hooks.
@@ -38,6 +39,10 @@ class ServiceProvider
         // Webhook handler
         $webhook = new FlourishWebhook($existing_settings);
         $webhook->register_hooks();
+
+        // Item image sync
+        $item_images = new FlourishItemImages($existing_settings);
+        $item_images->register_hooks();
 
         // Date of Birth field
         $dob = new DateOfBirth($existing_settings);

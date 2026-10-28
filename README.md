@@ -116,6 +116,16 @@ Notes:
 - **Cancel in both places.** The gateway releases the hold. Cancelling in WooCommerce doesn't cancel the Flourish order, so the plugin adds a note and emails the site admin to cancel it in Flourish.
 - Flourish's Packed and Out for Delivery statuses don't change these WooCommerce orders. Completed and Cancelled do.
 
+## Product Images
+
+Turn on **Product Images** under Item Sync Options to pull item art from Flourish. It applies to every item sync (full sync and `item` webhooks), not just webhooks.
+
+- **Main image:** the Flourish `product` image. If an item has no product image, the first of packaging or label is used instead.
+- **Gallery:** the `packaging` and then `label` images.
+- **Flourish is the source of images.** When an item has art in Flourish, the plugin sets the main image and gallery to match. If art is removed in Flourish, the Flourish images are removed from the product. Images that never came from Flourish are left on products with no art.
+- **Downloads happen in the background** through WooCommerce's Action Scheduler (WooCommerce → Status → Scheduled Actions, hook `flourish_sync_item_images`), so syncs don't wait on images.
+- **Images are only downloaded when they change.** Flourish saves each upload under a new name, so the plugin re-downloads an image only after it's replaced in Flourish, and deletes the Flourish image it replaced. Images uploaded by hand in WooCommerce are never deleted.
+
 ## Flourish API Access
 
 ### Endpoints
@@ -132,6 +142,7 @@ The plugin calls these Flourish external API endpoints, so the API key needs acc
 | GetRetailCustomers | `GET /external/api/v1/customers?email=` | Finding the customer by email |
 | PostRetailCustomer | `POST /external/api/v1/customers` | Creating the customer if none exists |
 | GetItems | `GET /external/api/v1/items` | Product import and SKU checks |
+| GetItemArt | `GET /external/api/v1/items/{id}/art` | Product images, when Product Images is turned on |
 | GetInventorySummary | `GET /external/api/v1/inventory/summary` | Stock levels for import, webhooks and cancellations |
 | GetBrands | `GET /external/api/v1/brands` | Brand filter options on the settings page |
 | GetFacilities | `GET /external/api/v1/facilities` | Facility picker on the settings page |
