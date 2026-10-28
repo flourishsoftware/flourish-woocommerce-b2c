@@ -11,6 +11,7 @@ use FlourishWooCommercePlugin\CustomFields\DateOfBirth;
 use FlourishWooCommercePlugin\CustomFields\FlourishOrderID;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersRetail;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersCancel;
+use FlourishWooCommercePlugin\Handlers\HandlerOrdersPayment;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersSyncNow;
 
 /**
@@ -49,6 +50,10 @@ class ServiceProvider
         // Retail order handler
         $handler_retail = new HandlerOrdersRetail($existing_settings);
         $handler_retail->register_hooks();
+
+        // Payments captured in WooCommerce
+        $handler_payment = new HandlerOrdersPayment($existing_settings);
+        $handler_payment->register_hooks();
 
         // Order cancellation handler
         $handler_cancel = new HandlerOrdersCancel($existing_settings);

@@ -4,7 +4,7 @@
  * Plugin Name: Flourish WooCommerce B2C
  * Plugin URI: https://github.com/flourishsoftware/flourish-woocommerce-b2c
  * Description: A WooCommerce plugin for B2C retail sales powered by Flourish.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Flourish Software
  * Author URI: https://flourishsoftware.com
  * License: GPLv3

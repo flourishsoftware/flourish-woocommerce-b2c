@@ -29,10 +29,38 @@ class HandlerOrdersRetail
         add_filter('woocommerce_can_reduce_order_stock', [$this, 'conditionally_disable_stock_reduction'], 10, 2);
 
         // Classic checkout hook
-        add_action('woocommerce_checkout_order_processed', [$this, 'handle_order_retail'], 10, 1);
+        add_action('woocommerce_checkout_order_processed', [$this, 'handle_checkout_order'], 10, 1);
 
         // Block-based checkout hook (WooCommerce Blocks)
-        add_action('woocommerce_store_api_checkout_order_processed', [$this, 'handle_order_retail'], 10, 1);
+        add_action('woocommerce_store_api_checkout_order_processed', [$this, 'handle_checkout_order'], 10, 1);
+
+        // Fired by the AeroPay gateway once the pre-auth hold exists.
+        // See README "AeroPay Payments".
+        add_action('flourish_payment_authorized', [$this, 'handle_order_retail'], 10, 1);
+    }
+
+    /**
+     * Checkout hooks fire before the gateway processes payment. Orders paid
+     * with the configured AeroPay gateway wait for flourish_payment_authorized
+     * so failed or abandoned payments never reach Flourish.
+     */
+    public function handle_checkout_order($order_id)
+    {
+        $wc_order = $order_id instanceof \WC_Order ? $order_id : wc_get_order($order_id);
+        if (!$wc_order) {
+            return;
+        }
+
+        if ($this->awaits_payment_authorization($wc_order)) {
+            return;
+        }
+
+        $this->handle_order_retail($wc_order->get_id());
+    }
+
+    private function awaits_payment_authorization($wc_order)
+    {
+        return HandlerOrdersPayment::is_gateway_order($wc_order, $this->existing_settings);
     }
 
     /**
@@ -114,15 +142,9 @@ class HandlerOrdersRetail
             // DEBUG: Log the payload before sending
             error_log('Flourish Order Payload: ' . json_encode($order_payload, JSON_PRETTY_PRINT));
 
-            // Add total_paid for paid orders (online payments)
-            // TODO: Uncomment when Flourish handles paid status correctly
-            // if ($wc_order->is_paid()) {
-            //     $order_payload['total_paid'] = (float) $wc_order->get_total();
-            // }
-
             // Add expected timestamp based on fulfillment type
             $expected_timestamp = $this->get_expected_fulfillment_timestamp($wc_order, $fulfillment_type);
-            if ($fulfillment_type === 'delivery') {
+            if ($fulfillment_type === 'delivery' || $fulfillment_type === 'postal shipping') {
                 $order_payload['expected_delivery_timestamp'] = $expected_timestamp;
 
                 // Add delivery address and contact information
@@ -454,7 +476,8 @@ class HandlerOrdersRetail
 
     /**
      * Determine fulfillment type based on WooCommerce shipping method.
-     * Maps shipping methods to Flourish fulfillment types: delivery, pickup, or in-store.
+     * Maps shipping methods to Flourish fulfillment types: delivery, pickup, or postal shipping.
+     * Non-pickup shipping methods use the "Shipped Orders" setting (delivery or postal shipping).
      */
     private function get_fulfillment_type($wc_order)
     {
@@ -474,8 +497,8 @@ class HandlerOrdersRetail
             }
         }
 
-        // Default to delivery for all other shipping methods
-        return 'delivery';
+        // All other shipping methods use the configured type (delivery by default)
+        return $this->existing_settings['shipping_fulfillment_type'] ?? 'delivery';
     }
 
     /**

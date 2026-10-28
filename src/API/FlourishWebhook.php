@@ -4,6 +4,7 @@ namespace FlourishWooCommercePlugin\API;
 
 defined('ABSPATH') || exit;
 
+use FlourishWooCommercePlugin\Handlers\HandlerOrdersPayment;
 use FlourishWooCommercePlugin\Importer\FlourishItems;
 use FlourishWooCommercePlugin\Helpers\StockHelper;
 use WP_REST_Request;
@@ -203,10 +204,18 @@ class FlourishWebhook
             return new WP_REST_Response(['message' => 'Retail order not found.'], 404);
         }
 
-        $new_status = 'created';
+        // AeroPay gateway orders are marked paid by the gateway when staff confirm
+        // payment in WooCommerce, so they only follow Completed / Cancelled.
+        $is_gateway_order = HandlerOrdersPayment::is_gateway_order($wc_order, $this->existing_settings);
+
+        $new_status = $is_gateway_order ? null : 'created';
         switch ($data['order_status']) {
             case 'Packed':
             case 'Out for Delivery':
+                if (!$is_gateway_order) {
+                    $new_status = 'completed';
+                }
+                break;
             case 'Completed':
                 $new_status = 'completed';
                 break;
@@ -216,7 +225,13 @@ class FlourishWebhook
         }
 
         $this->sync_stock_from_flourish($wc_order, $post_id);
-        $wc_order->update_status($new_status, 'Flourish retail order status: ' . $data['order_status'] . '. Updated by webhook.');
+
+        $note = 'Flourish retail order status: ' . $data['order_status'] . '. Updated by webhook.';
+        if ($new_status === null) {
+            $wc_order->add_order_note($note);
+        } else {
+            $wc_order->update_status($new_status, $note);
+        }
 
         return new WP_REST_Response(['message' => 'Retail order handled successfully.'], 200);
     }
