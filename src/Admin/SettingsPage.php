@@ -143,6 +143,7 @@ class SettingsPage
             'name'        => !empty($input['item_sync_options']['name']),
             'description' => !empty($input['item_sync_options']['description']),
             'price'       => !empty($input['item_sync_options']['price']),
+            'images'      => !empty($input['item_sync_options']['images']),
         ];
 
         return $sanitized;
@@ -493,9 +494,17 @@ class SettingsPage
                                            value="1"
                                         <?php checked(!empty($settings['item_sync_options']['price'])); ?> />
                                     Product Price
+                                </label><br>
+                                <label>
+                                    <input type="checkbox"
+                                           name="flourish_woocommerce_plugin_settings[item_sync_options][images]"
+                                           value="1"
+                                        <?php checked(!empty($settings['item_sync_options']['images'])); ?> />
+                                    Product Images
                                 </label>
                             </fieldset>
                             <p class="description">Select which fields to update when Flourish sends an item webhook. Stock is always synced.</p>
+                            <p class="description">Product Images applies to every item sync. When an item has art in Flourish, the product image becomes the main image and the packaging and label images become the gallery, replacing what is set in WooCommerce. Art removed in Flourish is removed from the product. Images download in the background.</p>
                         </td>
                     </tr>
                 </table>

@@ -94,6 +94,30 @@ class FlourishAPI
     }
 
     /**
+     * Fetch signed image links (product, packaging, label) for an item.
+     *
+     * Links are S3 presigned URLs that expire, so callers should download
+     * them right away. Returns an empty array when the item has no art (204).
+     */
+    public function fetch_item_art($item_id, $expire = '15m')
+    {
+        $api_url = $this->url . "/external/api/v1/items/" . (int) $item_id . "/art?expire=" . urlencode($expire);
+        $headers = $this->get_headers();
+
+        try {
+            $response_http = HttpRequestHelper::make_request($api_url, 'GET', $headers);
+            if ((int) $response_http['http_code'] === 204) {
+                return [];
+            }
+            $response_data = HttpRequestHelper::validate_response($response_http);
+        } catch (\Exception $e) {
+            throw new \Exception("Error fetching item art: " . $e->getMessage());
+        }
+
+        return is_array($response_data['data'] ?? null) ? $response_data['data'] : [];
+    }
+
+    /**
      * Fetch all products with pagination.
      *
      * FIX (Critical #6): Added max retry count to prevent infinite loop on
