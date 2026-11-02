@@ -230,7 +230,7 @@ class FlourishItems
         return [
             'flourish_item_id'      => $flourish_item['id'],
             'item_category'         => $flourish_item['item_category'] ?? '',
-            'name'                  => $flourish_item['item_name'],
+            'name'                  => !empty(trim($flourish_item['retail_display_name'] ?? '')) ? trim($flourish_item['retail_display_name']) : $flourish_item['item_name'],
             'description'           => $flourish_item['item_description'] ?? '',
             'sku'                   => $flourish_item['sku'],
             'price'                 => $flourish_item['retail_price'] ?? $flourish_item['price'] ?? 0,
