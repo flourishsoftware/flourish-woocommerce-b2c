@@ -375,9 +375,9 @@ class FlourishAPI
     }
 
     /**
-     * Fetch the item class name for a single item, or '' when it has none.
+     * Fetch a single item's record without importing it, or null when not found.
      */
-    public function fetch_item_class($item_id)
+    public function fetch_item($item_id)
     {
         $api_url = $this->url . "/external/api/v1/items?item_id=" . (int) $item_id;
         $headers = $this->get_headers();
@@ -386,10 +386,74 @@ class FlourishAPI
             $response_http = HttpRequestHelper::make_request($api_url, 'GET', $headers);
             $response_data = HttpRequestHelper::validate_response($response_http);
         } catch (\Exception $e) {
-            throw new \Exception("Error fetching item class: " . $e->getMessage());
+            throw new \Exception("Error fetching item: " . $e->getMessage());
         }
 
-        return (string) ($response_data['data'][0]['item_class'] ?? '');
+        return $response_data['data'][0] ?? null;
+    }
+
+    /**
+     * Fetch the item class name for a single item, or '' when it has none.
+     */
+    public function fetch_item_class($item_id)
+    {
+        $item = $this->fetch_item($item_id);
+
+        return (string) ($item['item_class'] ?? '');
+    }
+
+    /**
+     * Fetch the item's active lab results with cannabinoid amounts per
+     * package (GET /v2/items/{id}/potency-summary).
+     */
+    public function fetch_item_potency_summary($item_id)
+    {
+        $api_url = $this->url . "/external/api/v2/items/" . (int) $item_id . "/potency-summary";
+        $headers = $this->get_headers();
+
+        try {
+            $response_http = HttpRequestHelper::make_request($api_url, 'GET', $headers);
+            $response_data = HttpRequestHelper::validate_response($response_http);
+        } catch (\Exception $e) {
+            throw new \Exception("Error fetching potency summary: " . $e->getMessage());
+        }
+
+        return $response_data['data']['active_lab_results'] ?? [];
+    }
+
+    /**
+     * Lab result IDs of the item's packages with available stock at this
+     * facility. A package with no lab result is listed as null.
+     */
+    public function fetch_available_lab_result_ids($item_id)
+    {
+        $lab_result_ids = [];
+        $offset = 0;
+        $limit = self::API_LIMIT;
+        $has_more = true;
+
+        while ($has_more) {
+            $api_url = $this->url . "/external/api/v1/inventory?item_id=" . (int) $item_id . "&offset={$offset}&limit={$limit}";
+            $headers = $this->get_headers(true);
+
+            try {
+                $response_http = HttpRequestHelper::make_request($api_url, 'GET', $headers);
+                $response_data = HttpRequestHelper::validate_response($response_http);
+            } catch (\Exception $e) {
+                throw new \Exception("Error fetching inventory: " . $e->getMessage());
+            }
+
+            foreach ($response_data['data'] ?? [] as $package) {
+                if (($package['available_qty'] ?? 0) > 0) {
+                    $lab_result_ids[] = $package['lab_test_result_id'] ?? null;
+                }
+            }
+
+            $has_more = isset($response_data['meta']['next']) && !empty($response_data['meta']['next']);
+            $offset += $limit;
+        }
+
+        return array_values(array_unique($lab_result_ids, SORT_REGULAR));
     }
 
     /**
