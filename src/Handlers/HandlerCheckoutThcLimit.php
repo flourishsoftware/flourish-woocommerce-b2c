@@ -138,7 +138,7 @@ class HandlerCheckoutThcLimit
             }
         }
 
-        if (is_numeric($override)) {
+        if (is_numeric($override) && $override >= 0) {
             return ['mg' => (float) $override, 'cannabis' => true];
         }
 
