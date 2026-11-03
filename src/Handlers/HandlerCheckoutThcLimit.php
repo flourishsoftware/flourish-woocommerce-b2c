@@ -162,11 +162,13 @@ class HandlerCheckoutThcLimit
             );
 
             // Use the last value fetched and wait 5 minutes before retrying,
-            // so an outage doesn't slow every cart page.
+            // so an outage doesn't slow every cart page. Products synced
+            // before the inventory type was stored are treated as cannabis.
             $last = $item_product->get_meta('flourish_thc_mg_per_unit');
+            $inventory_type = $item_product->get_meta('flourish_inventory_type');
             $thc = [
                 'mg'       => is_numeric($last) ? (float) $last : null,
-                'cannabis' => $item_product->get_meta('flourish_inventory_type') === 'Cannabis',
+                'cannabis' => $inventory_type === '' || $inventory_type === 'Cannabis',
             ];
             set_transient($transient, $thc, 5 * MINUTE_IN_SECONDS);
 
@@ -176,7 +178,9 @@ class HandlerCheckoutThcLimit
         // Lab results and stock change, so refresh hourly.
         set_transient($transient, $thc, HOUR_IN_SECONDS);
         $item_product->update_meta_data('flourish_thc_mg_per_unit', $thc['mg'] ?? '');
-        $item_product->update_meta_data('flourish_inventory_type', $thc['cannabis'] ? 'Cannabis' : '');
+        if ($thc['inventory_type'] !== '') {
+            $item_product->update_meta_data('flourish_inventory_type', $thc['inventory_type']);
+        }
         $item_product->save_meta_data();
 
         return $thc;
@@ -187,16 +191,17 @@ class HandlerCheckoutThcLimit
         $flourish_api = $this->initializeFlourishAPI();
 
         $item = $flourish_api->fetch_item($flourish_item_id);
-        $cannabis = ($item['inventory_type'] ?? '') === 'Cannabis';
+        $inventory_type = $item['inventory_type'] ?? '';
+        $result = ['inventory_type' => $inventory_type, 'cannabis' => $inventory_type === 'Cannabis'];
 
         $mg = $this->thc_per_unit_to_mg($item['thc_per_unit'] ?? null, $item['thc_per_unit_uom'] ?? '');
         if ($mg !== null) {
-            return ['mg' => $mg, 'cannabis' => $cannabis];
+            return $result + ['mg' => $mg];
         }
 
         $lab_results = $flourish_api->fetch_item_potency_summary($flourish_item_id);
         if (empty($lab_results)) {
-            return ['mg' => null, 'cannabis' => $cannabis];
+            return $result + ['mg' => null];
         }
 
         $mg_by_result = [];
@@ -221,7 +226,7 @@ class HandlerCheckoutThcLimit
             return $mg !== null;
         });
 
-        return ['mg' => $candidates ? max($candidates) : null, 'cannabis' => $cannabis];
+        return $result + ['mg' => $candidates ? max($candidates) : null];
     }
 
     private function thc_per_unit_to_mg($amount, $uom)
@@ -270,7 +275,8 @@ class HandlerCheckoutThcLimit
 
     private function get_account_key()
     {
-        return md5(($this->existing_settings['url'] ?? '') . '|' . ($this->existing_settings['api_key'] ?? ''));
+        // Stock is per facility, so a facility change needs fresh values.
+        return md5(($this->existing_settings['url'] ?? '') . '|' . ($this->existing_settings['api_key'] ?? '') . '|' . ($this->existing_settings['facility_id'] ?? ''));
     }
 
     private function initializeFlourishAPI()
