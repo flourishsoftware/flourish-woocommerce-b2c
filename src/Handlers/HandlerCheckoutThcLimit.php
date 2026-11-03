@@ -178,9 +178,7 @@ class HandlerCheckoutThcLimit
         // Lab results and stock change, so refresh hourly.
         set_transient($transient, $thc, HOUR_IN_SECONDS);
         $item_product->update_meta_data('flourish_thc_mg_per_unit', $thc['mg'] ?? '');
-        if ($thc['inventory_type'] !== '') {
-            $item_product->update_meta_data('flourish_inventory_type', $thc['inventory_type']);
-        }
+        $item_product->update_meta_data('flourish_inventory_type', $thc['inventory_type']);
         $item_product->save_meta_data();
 
         return $thc;
@@ -191,8 +189,10 @@ class HandlerCheckoutThcLimit
         $flourish_api = $this->initializeFlourishAPI();
 
         $item = $flourish_api->fetch_item($flourish_item_id);
-        $inventory_type = $item['inventory_type'] ?? '';
-        $result = ['inventory_type' => $inventory_type, 'cannabis' => $inventory_type === 'Cannabis'];
+        // Companies can add their own inventory types, so anything that isn't
+        // Cannabis is stored as Non-Cannabis.
+        $cannabis = strcasecmp(trim($item['inventory_type'] ?? ''), 'Cannabis') === 0;
+        $result = ['inventory_type' => $cannabis ? 'Cannabis' : 'Non-Cannabis', 'cannabis' => $cannabis];
 
         $mg = $this->thc_per_unit_to_mg($item['thc_per_unit'] ?? null, $item['thc_per_unit_uom'] ?? '');
         if ($mg !== null) {
