@@ -342,7 +342,7 @@ class DateOfBirth
         if (is_checkout()) {
             wp_enqueue_script(
                 'flourish-checkout-dob',
-                plugins_url('assets/js/custom-checkout-dob.js', dirname(__DIR__) . '/flourish-woocommerce-plugin.php'),
+                plugins_url('assets/js/custom-checkout-dob.js', dirname(__DIR__, 2) . '/flourish-woocommerce-plugin.php'),
                 [],
                 '1.0.0',
                 true
