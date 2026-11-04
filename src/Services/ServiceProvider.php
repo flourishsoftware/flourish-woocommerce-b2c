@@ -9,6 +9,8 @@ use FlourishWooCommercePlugin\Admin\ProductCustomFields;
 use FlourishWooCommercePlugin\API\FlourishWebhook;
 use FlourishWooCommercePlugin\CustomFields\DateOfBirth;
 use FlourishWooCommercePlugin\CustomFields\FlourishOrderID;
+use FlourishWooCommercePlugin\Handlers\HandlerCheckoutAgeRestriction;
+use FlourishWooCommercePlugin\Handlers\HandlerCheckoutThcLimit;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersRetail;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersCancel;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersPayment;
@@ -51,6 +53,14 @@ class ServiceProvider
         // Flourish Order ID display
         $flourish_order_id = new FlourishOrderID();
         $flourish_order_id->register_hooks();
+
+        // Item class minimum age check at checkout
+        $handler_age = new HandlerCheckoutAgeRestriction($existing_settings);
+        $handler_age->register_hooks();
+
+        // Per-order THC limit at checkout
+        $handler_thc = new HandlerCheckoutThcLimit($existing_settings);
+        $handler_thc->register_hooks();
 
         // Retail order handler
         $handler_retail = new HandlerOrdersRetail($existing_settings);

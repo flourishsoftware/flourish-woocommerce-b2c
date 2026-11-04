@@ -153,6 +153,8 @@ class FlourishItems
         }
 
         $wc_product->update_meta_data('flourish_item_id', $product['flourish_item_id']);
+        $wc_product->update_meta_data('flourish_item_class', $product['item_class']);
+        $wc_product->update_meta_data('flourish_inventory_type', $product['inventory_type']);
     }
 
     /**
@@ -230,6 +232,10 @@ class FlourishItems
         return [
             'flourish_item_id'      => $flourish_item['id'],
             'item_category'         => $flourish_item['item_category'] ?? '',
+            'item_class'            => $flourish_item['item_class'] ?? '',
+            // Companies can add their own inventory types, so anything that
+            // isn't Cannabis is stored as Non-Cannabis.
+            'inventory_type'        => strcasecmp(trim($flourish_item['inventory_type'] ?? ''), 'Cannabis') === 0 ? 'Cannabis' : 'Non-Cannabis',
             'name'                  => !empty(trim($flourish_item['retail_display_name'] ?? '')) ? trim($flourish_item['retail_display_name']) : $flourish_item['item_name'],
             'description'           => $flourish_item['item_description'] ?? '',
             'sku'                   => $flourish_item['sku'],

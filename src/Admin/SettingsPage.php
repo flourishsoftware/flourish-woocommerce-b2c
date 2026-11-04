@@ -105,6 +105,11 @@ class SettingsPage
         $sanitized['url'] = esc_url_raw($input['url'] ?? 'https://app.flourishsoftware.com');
         $sanitized['facility_id'] = sanitize_text_field($input['facility_id'] ?? '');
         $sanitized['minimum_age'] = absint($input['minimum_age'] ?? 21);
+
+        // Per-order THC limit; blank turns the check off
+        $thc_limit_mg = $input['thc_limit_mg'] ?? '';
+        $sanitized['thc_limit_mg'] = is_numeric($thc_limit_mg) && $thc_limit_mg > 0 ? (float) $thc_limit_mg : '';
+        $sanitized['thc_limit_cannabinoid'] = sanitize_text_field($input['thc_limit_cannabinoid'] ?? '') ?: 'THC';
         $sanitized['order_status'] = in_array($input['order_status'] ?? '', ['created', 'submitted'])
             ? $input['order_status']
             : 'submitted';
@@ -374,6 +379,30 @@ class SettingsPage
                                    max="99"
                                    class="small-text" />
                             <p class="description">Minimum age required for CBD/hemp purchases (default: 21).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="thc_limit_mg">THC Limit per Order (mg)</label></th>
+                        <td>
+                            <input type="number"
+                                   id="thc_limit_mg"
+                                   name="flourish_woocommerce_plugin_settings[thc_limit_mg]"
+                                   value="<?php echo esc_attr($settings['thc_limit_mg'] ?? ''); ?>"
+                                   min="0"
+                                   step="any"
+                                   class="small-text" />
+                            <p class="description">Blocks checkout when an order's THC is over this amount, for example 12000 in Georgia. Leave blank for no limit. Rolling or per-day limits aren't supported.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="thc_limit_cannabinoid">THC Limit Cannabinoid</label></th>
+                        <td>
+                            <input type="text"
+                                   id="thc_limit_cannabinoid"
+                                   name="flourish_woocommerce_plugin_settings[thc_limit_cannabinoid]"
+                                   value="<?php echo esc_attr($settings['thc_limit_cannabinoid'] ?? 'THC'); ?>"
+                                   class="regular-text" />
+                            <p class="description">Cannabinoid in Flourish lab results that counts toward the limit (default: THC). Used for items without a THC per unit in Flourish.</p>
                         </td>
                     </tr>
                     <tr>

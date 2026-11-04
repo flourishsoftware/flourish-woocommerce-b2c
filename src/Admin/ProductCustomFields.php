@@ -73,6 +73,13 @@ class ProductCustomFields
                 'type'        => 'text',
                 'value'       => get_post_meta($post->ID, 'uom_description', true),
             ],
+            '_thc_mg_per_unit' => [
+                'label'             => __('THC mg per Unit', 'flourish-woocommerce'),
+                'description'       => __('Overrides the THC per unit from Flourish for the per-order THC limit. Leave blank to use Flourish.', 'flourish-woocommerce'),
+                'type'              => 'number',
+                'value'             => get_post_meta($post->ID, '_thc_mg_per_unit', true),
+                'custom_attributes' => ['step' => 'any', 'min' => '0'],
+            ],
             '_min_order_quantity' => [
                 'label'             => __('Minimum Order Quantity', 'woocommerce'),
                 'description'       => __('Set the minimum quantity customers can order.', 'woocommerce'),
@@ -110,6 +117,7 @@ class ProductCustomFields
             'unit_weight',
             'uom',
             'uom_description',
+            '_thc_mg_per_unit',
             '_min_order_quantity',
             '_max_order_quantity',
         ];
