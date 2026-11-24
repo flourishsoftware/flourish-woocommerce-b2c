@@ -11,6 +11,7 @@ use FlourishWooCommercePlugin\CustomFields\DateOfBirth;
 use FlourishWooCommercePlugin\CustomFields\FlourishOrderID;
 use FlourishWooCommercePlugin\Handlers\HandlerCheckoutAgeRestriction;
 use FlourishWooCommercePlugin\Handlers\HandlerCheckoutThcLimit;
+use FlourishWooCommercePlugin\Handlers\HandlerCouponLineLimit;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersRetail;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersCancel;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersPayment;
@@ -61,6 +62,10 @@ class ServiceProvider
         // Per-order THC limit at checkout
         $handler_thc = new HandlerCheckoutThcLimit($existing_settings);
         $handler_thc->register_hooks();
+
+        // Flourish per-order line cap on synced coupons
+        $handler_coupon_lines = new HandlerCouponLineLimit();
+        $handler_coupon_lines->register_hooks();
 
         // Retail order handler
         $handler_retail = new HandlerOrdersRetail($existing_settings);

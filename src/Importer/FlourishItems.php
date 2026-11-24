@@ -38,9 +38,7 @@ class FlourishItems
 
             $product_id = $this->update_product_attributes($wc_product, $product, $item_sync_options, $webhook_status);
 
-            if (!empty($product['item_category'])) {
-                $this->assign_product_category($product['item_category'], $product_id);
-            }
+            $this->assign_product_categories($product, $product_id);
 
             if (!empty($product['brand'])) {
                 $this->assign_product_brand($product['brand'], $product_id);
@@ -211,20 +209,109 @@ class FlourishItems
         return true;
     }
 
-    private function assign_product_category($category_name, $product_id)
+    /**
+     * Categorize by the eCommerce category (with its sub-category as a child
+     * term) when set, falling back to the Flourish item_category.
+     *
+     * If the payload has no eCommerce category fields at all (webhook payloads
+     * aren't confirmed to include them), existing categories are left alone so
+     * a webhook doesn't overwrite what the full sync set. A product with no
+     * category yet still gets item_category.
+     */
+    private function assign_product_categories($product, $product_id)
     {
-        $term = term_exists($category_name, 'product_cat');
+        if (empty($product_id)) {
+            return;
+        }
+
+        $parent_name = $product['ecommerce_category'];
+        $child_name  = $product['ecommerce_sub_category'];
+
+        if (!$product['has_ecommerce_fields']) {
+            if (!empty($product['item_category']) && !$this->has_assigned_category($product_id)) {
+                $this->set_product_category($this->get_or_create_category_term($product['item_category']), $product_id);
+            }
+            return;
+        }
+
+        if ($parent_name !== '') {
+            $term_id = $this->get_or_create_category_term($parent_name);
+            if ($child_name !== '') {
+                $term_id = $this->get_or_create_category_term($child_name, $term_id);
+            }
+            $this->set_product_category($term_id, $product_id);
+            return;
+        }
+
+        if (!empty($product['item_category'])) {
+            $this->set_product_category($this->get_or_create_category_term($product['item_category']), $product_id);
+        }
+    }
+
+    private function has_assigned_category($product_id)
+    {
+        $default_cat = (int) get_option('default_product_cat', 0);
+        $term_ids = wp_get_object_terms($product_id, 'product_cat', ['fields' => 'ids']);
+
+        if (is_wp_error($term_ids)) {
+            return false;
+        }
+
+        return count(array_diff(array_map('intval', $term_ids), [$default_cat])) > 0;
+    }
+
+    /**
+     * Without a parent, match the name at any level so a category the store
+     * moved under a parent isn't duplicated at the top level. With a parent
+     * (sub-categories), match only under that parent.
+     */
+    private function get_or_create_category_term($category_name, $parent_id = 0)
+    {
+        $term = $parent_id
+            ? term_exists($category_name, 'product_cat', $parent_id)
+            : term_exists($category_name, 'product_cat');
 
         if (!$term) {
-            $term = wp_insert_term($category_name, 'product_cat');
+            $term = wp_insert_term($category_name, 'product_cat', ['parent' => $parent_id]);
         }
 
-        if (!is_wp_error($term)) {
-            $term_id = $term['term_id'] ?? $term['term_taxonomy_id'];
-            wp_set_object_terms($product_id, (int) $term_id, 'product_cat');
-        } else {
-            throw new \Exception("Error inserting category term.");
+        if (is_wp_error($term)) {
+            throw new \Exception("Error inserting category term: " . $term->get_error_message());
         }
+
+        return (int) ($term['term_id'] ?? $term['term_taxonomy_id']);
+    }
+
+    private function set_product_category($term_id, $product_id)
+    {
+        wp_set_object_terms($product_id, (int) $term_id, 'product_cat');
+    }
+
+    /**
+     * Retail price, falling back to price. Production Flourish returns
+     * retail_price 0 for some items, which synced them at $0.00. Returns ''
+     * (no price, not purchasable) when both are zero; never 0.
+     */
+    private function resolve_price($flourish_item)
+    {
+        foreach (['retail_price', 'price'] as $key) {
+            if (isset($flourish_item[$key]) && is_numeric($flourish_item[$key]) && (float) $flourish_item[$key] > 0) {
+                return (float) $flourish_item[$key];
+            }
+        }
+
+        return '';
+    }
+
+    private function first_non_empty($flourish_item, array $keys)
+    {
+        foreach ($keys as $key) {
+            if (isset($flourish_item[$key]) && trim((string) $flourish_item[$key]) !== '') {
+                return trim((string) $flourish_item[$key]);
+            }
+        }
+
+        return '';
     }
 
     private function map_flourish_item_to_woocommerce_product($flourish_item)
@@ -232,6 +319,10 @@ class FlourishItems
         return [
             'flourish_item_id'      => $flourish_item['id'],
             'item_category'         => $flourish_item['item_category'] ?? '',
+            'has_ecommerce_fields'  => array_key_exists('ecommerce_category_name', $flourish_item)
+                || array_key_exists('ecommerce_category_description', $flourish_item),
+            'ecommerce_category'    => $this->first_non_empty($flourish_item, ['ecommerce_category_name', 'ecommerce_category_description']),
+            'ecommerce_sub_category' => $this->first_non_empty($flourish_item, ['ecommerce_sub_category_name', 'ecommerce_sub_category_description']),
             'item_class'            => $flourish_item['item_class'] ?? '',
             // Companies can add their own inventory types, so anything that
             // isn't Cannabis is stored as Non-Cannabis.
@@ -239,7 +330,7 @@ class FlourishItems
             'name'                  => !empty(trim($flourish_item['retail_display_name'] ?? '')) ? trim($flourish_item['retail_display_name']) : $flourish_item['item_name'],
             'description'           => $flourish_item['item_description'] ?? '',
             'sku'                   => $flourish_item['sku'],
-            'price'                 => $flourish_item['retail_price'] ?? $flourish_item['price'] ?? 0,
+            'price'                 => $this->resolve_price($flourish_item),
             'uom'                   => $flourish_item['uom'] ?? '',
             'uom_description'       => $flourish_item['uom_description'] ?? '',
             'unit_weight'           => $flourish_item['unit_weight'] ?? '',

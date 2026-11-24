@@ -583,7 +583,8 @@ class FlourishAPI
     public function get_order_by_id($order_id, $order_type_api)
     {
         $api_url = $this->url . "/external/api/v1/{$order_type_api}/{$order_id}";
-        $headers = $this->get_headers();
+        // Flourish returns 404 "facility header is required" without FacilityID.
+        $headers = $this->get_headers(true);
 
         try {
             $response_http = HttpRequestHelper::make_request($api_url, 'GET', $headers);
