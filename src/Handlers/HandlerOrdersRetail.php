@@ -189,7 +189,7 @@ class HandlerOrdersRetail
             'first_name' => $wc_order->get_billing_first_name(),
             'last_name'  => $wc_order->get_billing_last_name(),
             'email'      => $wc_order->get_billing_email(),
-            'phone'      => $wc_order->get_billing_phone(),
+            'phone'      => $this->normalize_phone($wc_order->get_billing_phone()),
             'dob'        => $dob,
         ];
 
@@ -549,6 +549,21 @@ class HandlerOrdersRetail
     }
 
     /**
+     * Strip formatting and a leading US country code. Returns '' unless
+     * exactly 10 digits remain.
+     */
+    private function normalize_phone($phone)
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phone);
+
+        if (strlen($digits) === 11 && $digits[0] === '1') {
+            $digits = substr($digits, 1);
+        }
+
+        return strlen($digits) === 10 ? $digits : '';
+    }
+
+    /**
      * Extract delivery information from WooCommerce order.
      * Includes shipping address, contact details, and delivery fee.
      *
@@ -585,8 +600,10 @@ class HandlerOrdersRetail
         }
 
         // Add contact information
-        $billing_phone = $wc_order->get_billing_phone();
-        if (!empty($billing_phone)) {
+        // Flourish rejects anything but a 10-digit number ("delivery contact
+        // phone number must be a 10 digit number"), e.g. "+1 (xxx) xxx-xxxx".
+        $billing_phone = $this->normalize_phone($wc_order->get_billing_phone());
+        if ($billing_phone !== '') {
             $delivery_info['delivery_contact_no'] = $billing_phone;
             // Also use for SMS contact (WooCommerce doesn't distinguish)
             $delivery_info['delivery_text_contact_no'] = $billing_phone;

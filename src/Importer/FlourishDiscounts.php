@@ -37,14 +37,34 @@ class FlourishDiscounts
 
     private function get_or_create_coupon($code)
     {
+        // WooCommerce caches the code-to-ID lookup, so the ID can belong to a
+        // coupon that has since been deleted or trashed. Reusing it saves a
+        // coupon with no code, and typing the code by hand then fails with
+        // "already exists". On a stale hit, clear the cache and look again so
+        // a coupon recreated under a new ID is reused, not duplicated.
         $coupon_id = wc_get_coupon_id_by_code($code);
-        if ($coupon_id) {
+        if ($coupon_id && !$this->is_live_coupon($coupon_id, $code)) {
+            \WC_Cache_Helper::invalidate_cache_group('coupons');
+            $coupon_id = wc_get_coupon_id_by_code($code);
+        }
+
+        if ($coupon_id && $this->is_live_coupon($coupon_id, $code)) {
             return new \WC_Coupon($coupon_id);
         }
 
         $coupon = new \WC_Coupon();
         $coupon->set_code($code);
         return $coupon;
+    }
+
+    private function is_live_coupon($coupon_id, $code)
+    {
+        $post = get_post($coupon_id);
+
+        return $post
+            && $post->post_type === 'shop_coupon'
+            && $post->post_status === 'publish'
+            && wc_strtolower($post->post_title) === wc_strtolower(wc_format_coupon_code($code));
     }
 
     private function map_discount_to_coupon(\WC_Coupon $coupon, array $discount)
@@ -64,8 +84,17 @@ class FlourishDiscounts
             $coupon->set_date_expires($discount['end_date']);
         }
 
-        if (!empty($discount['max_redemptions_per_order'])) {
-            $coupon->set_limit_usage_to_x_items($discount['max_redemptions_per_order']);
+        // Flourish's max_redemptions_per_order limits order lines, while
+        // WooCommerce's item limit counts units. Mapping one onto the other
+        // undercounts the discount once a line has 3+ units, so WooCommerce
+        // totals came out higher than Flourish and blocked the Aeropay capture.
+        // The line cap is stored as meta and enforced by HandlerCouponLineLimit.
+        $coupon->set_limit_usage_to_x_items(null);
+        $max_lines = (int) ($discount['max_redemptions_per_order'] ?? 0);
+        if ($max_lines > 0) {
+            $coupon->update_meta_data('_flourish_max_redemptions_per_order', $max_lines);
+        } else {
+            $coupon->delete_meta_data('_flourish_max_redemptions_per_order');
         }
 
         if (!empty($discount['eligible_items'])) {
