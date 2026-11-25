@@ -5,6 +5,7 @@ namespace FlourishWooCommercePlugin\Handlers;
 defined('ABSPATH') || exit;
 
 use FlourishWooCommercePlugin\API\FlourishAPI;
+use FlourishWooCommercePlugin\CustomFields\DateOfBirth;
 
 /**
  * Blocks checkout when the customer is younger than the minimum age set on
@@ -64,7 +65,7 @@ class HandlerCheckoutAgeRestriction
 
         $email = $wc_order->get_billing_email();
 
-        $violations = $this->get_violations($products, $email, $this->get_block_checkout_dob($wc_order, $email));
+        $violations = $this->get_violations($products, $email, $this->get_block_checkout_dob($wc_order));
         if (empty($violations)) {
             return;
         }
@@ -80,19 +81,9 @@ class HandlerCheckoutAgeRestriction
      * Block checkout doesn't post billing_dob, so read it from wherever the
      * DOB field saved it.
      */
-    private function get_block_checkout_dob($wc_order, $email)
+    private function get_block_checkout_dob($wc_order)
     {
-        $dob = $wc_order->get_meta('_customer_dob') ?: $wc_order->get_meta('_billing_dob');
-
-        if (empty($dob) && $wc_order->get_customer_id()) {
-            $dob = get_user_meta($wc_order->get_customer_id(), 'dob', true);
-        }
-
-        if (empty($dob) && !empty($email)) {
-            $dob = get_transient('flourish_dob_' . md5($email));
-        }
-
-        return $dob ?: '';
+        return DateOfBirth::get_order_dob($wc_order);
     }
 
     /**

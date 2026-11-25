@@ -5,6 +5,7 @@ namespace FlourishWooCommercePlugin\Handlers;
 defined('ABSPATH') || exit;
 
 use FlourishWooCommercePlugin\API\FlourishAPI;
+use FlourishWooCommercePlugin\CustomFields\DateOfBirth;
 use FlourishWooCommercePlugin\Helpers\AddressHelper;
 use FlourishWooCommercePlugin\Helpers\HttpRequestHelper;
 use FlourishWooCommercePlugin\Helpers\StockHelper;
@@ -104,11 +105,15 @@ class HandlerOrdersRetail
         try {
             $flourish_api = $this->initializeFlourishAPI();
 
-            // Get or create customer
-            // Try order meta first (for admin sync), then $_POST (for checkout)
+            // Get or create customer. DOB comes from order meta (admin sync),
+            // then $_POST (classic checkout), then the customer's account or the
+            // block checkout DOB field.
             $raw_dob = $wc_order->get_meta('_customer_dob') ?: $wc_order->get_meta('_billing_dob');
             if (empty($raw_dob)) {
                 $raw_dob = sanitize_text_field($_POST['billing_dob'] ?? '');
+            }
+            if (empty($raw_dob)) {
+                $raw_dob = DateOfBirth::get_order_dob($wc_order);
             }
             $customer_data = $this->build_customer_data($wc_order, $raw_dob);
             $customer = $flourish_api->get_or_create_customer_by_email($customer_data);

@@ -33,9 +33,13 @@ class DateOfBirth
         // Checkout support
         add_filter('woocommerce_billing_fields', [$this, 'add_dob_billing_field']);
         add_filter('woocommerce_checkout_fields', [$this, 'add_dob_to_checkout_fields']);
-        add_action('woocommerce_after_order_notes', [$this, 'display_dob_field_manual']);
         add_action('woocommerce_checkout_process', [$this, 'validate_dob_field']);
         add_action('woocommerce_checkout_update_order_meta', [$this, 'save_dob_to_order']);
+
+        // Block checkout doesn't post billing_dob. Copy the DOB saved through
+        // the REST route onto the order before the age check (priority 5) and
+        // order sync (priority 10) read it.
+        add_action('woocommerce_store_api_checkout_order_processed', [$this, 'save_dob_to_block_checkout_order'], 1, 1);
 
         // My Account page support
         add_action('woocommerce_edit_account_form', [$this, 'display_dob_on_account_page']);
@@ -112,7 +116,7 @@ class DateOfBirth
 
         // Validate DOB format
         $dob_date = \DateTime::createFromFormat('Y-m-d', $dob);
-        if (!$dob_date || $dob_date->format('Y-m-d') !== $dob) {
+        if (!$dob_date || $dob_date->format('Y-m-d') !== $dob || (int) $dob_date->format('Y') < 1900) {
             return new \WP_REST_Response(['status' => 'error', 'message' => 'Invalid date format.'], 400);
         }
 
@@ -133,7 +137,7 @@ class DateOfBirth
 
         // Also store in transient for guest checkout (keyed by email)
         if (!empty($email)) {
-            set_transient('flourish_dob_' . md5($email), $dob, HOUR_IN_SECONDS);
+            set_transient(self::transient_key($email), $dob, HOUR_IN_SECONDS);
         }
 
         return new \WP_REST_Response(['status' => 'success', 'message' => 'DOB saved.'], 200);
@@ -177,28 +181,6 @@ class DateOfBirth
         ];
 
         return $fields;
-    }
-
-    /**
-     * Manually display DOB field on checkout.
-     */
-    public function display_dob_field_manual($checkout)
-    {
-        $min_age = $this->existing_settings['minimum_age'] ?? self::DEFAULT_MINIMUM_AGE;
-
-        echo '<div id="flourish_dob_checkout_field" class="flourish-dob-field">';
-        echo '<h3>' . \__('Age Verification', 'flourish-woocommerce') . '</h3>';
-
-        \woocommerce_form_field('billing_dob', [
-            'type'        => 'date',
-            'class'       => ['form-row-wide'],
-            'label'       => \__('Date of Birth', 'flourish-woocommerce'),
-            'required'    => true,
-            'placeholder' => \__('YYYY-MM-DD', 'flourish-woocommerce'),
-            'description' => sprintf(\__('You must be at least %d years old to purchase these products.', 'flourish-woocommerce'), $min_age),
-        ], $checkout->get_value('billing_dob'));
-
-        echo '</div>';
     }
 
     /**
@@ -247,6 +229,59 @@ class DateOfBirth
                 update_user_meta($user_id, 'dob', $dob);
             }
         }
+    }
+
+    /**
+     * Save the block checkout DOB to the order and, for a logged-in customer,
+     * to their account.
+     */
+    public function save_dob_to_block_checkout_order($wc_order)
+    {
+        if (!$wc_order instanceof \WC_Order) {
+            return;
+        }
+
+        $dob = self::get_order_dob($wc_order);
+        if (empty($dob)) {
+            return;
+        }
+
+        if ($wc_order->get_meta('_billing_dob') !== $dob) {
+            $wc_order->update_meta_data('_customer_dob', $dob);
+            $wc_order->update_meta_data('_billing_dob', $dob);
+            $wc_order->save();
+        }
+
+        $user_id = $wc_order->get_customer_id();
+        if ($user_id && !get_user_meta($user_id, 'dob', true)) {
+            update_user_meta($user_id, 'dob', $dob);
+        }
+    }
+
+    /**
+     * The DOB entered for an order: order meta (classic checkout or an earlier
+     * block checkout save), the customer's account, or the value the block
+     * checkout DOB field saved for the billing email.
+     */
+    public static function get_order_dob($wc_order)
+    {
+        $dob = $wc_order->get_meta('_customer_dob') ?: $wc_order->get_meta('_billing_dob');
+
+        if (empty($dob) && $wc_order->get_customer_id()) {
+            $dob = get_user_meta($wc_order->get_customer_id(), 'dob', true);
+        }
+
+        $email = $wc_order->get_billing_email();
+        if (empty($dob) && !empty($email)) {
+            $dob = get_transient(self::transient_key($email));
+        }
+
+        return $dob ?: '';
+    }
+
+    private static function transient_key($email)
+    {
+        return 'flourish_dob_' . md5(strtolower(trim($email)));
     }
 
     /**
@@ -344,7 +379,7 @@ class DateOfBirth
                 'flourish-checkout-dob',
                 plugins_url('assets/js/custom-checkout-dob.js', dirname(__DIR__, 2) . '/flourish-woocommerce-plugin.php'),
                 [],
-                '1.0.0',
+                '1.1.0',
                 true
             );
 
@@ -352,6 +387,7 @@ class DateOfBirth
                 'getApiUrl'  => rest_url('flourish/v1/get-dob'),
                 'postApiUrl' => rest_url('flourish/v1/save-dob'),
                 'nonce'      => wp_create_nonce('wp_rest'),
+                'isLoggedIn' => is_user_logged_in(),
                 'minimumAge' => $this->existing_settings['minimum_age'] ?? self::DEFAULT_MINIMUM_AGE,
             ]);
         }
