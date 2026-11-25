@@ -18,9 +18,15 @@
     const FIELD_ID = 'dob';
     const WRAPPER_CLASS = 'wc-block-components-address-form__dob';
     const PLACE_ORDER_SELECTOR = '.wc-block-components-checkout-place-order-button';
+    // The server keeps a guest's DOB for an hour. Save it again at Place Order
+    // once the last save is older than this.
+    const MAX_SAVE_AGE_MS = 50 * 60 * 1000;
+    const SAVE_FAILED_MESSAGE = 'We couldn\'t save your Date of Birth. Please refresh the page and try again.';
 
     let dobValue = '';
     let savedKey = '';
+    let savedAt = 0;
+    let saveError = '';
     let queuedKey = '';
     let saveQueue = Promise.resolve();
     let resumingClick = false;
@@ -65,12 +71,19 @@
     }
 
     function showValidation() {
+        return setError(getErrorMessage());
+    }
+
+    /**
+     * Show a message under the field, or clear it when the message is empty.
+     * Returns true when there's no error.
+     */
+    function setError(message) {
         const input = document.getElementById(FIELD_ID);
         if (!input) {
             return true;
         }
         const wrapper = input.closest('.' + WRAPPER_CLASS);
-        const message = getErrorMessage();
         let errorDiv = wrapper.querySelector('.wc-block-components-validation-error');
 
         if (!message) {
@@ -158,9 +171,18 @@
         return true;
     }
 
+    function getKey() {
+        return getEmail().toLowerCase() + '|' + dobValue;
+    }
+
+    function isSaved(key) {
+        return key === savedKey && key === queuedKey && Date.now() - savedAt < MAX_SAVE_AGE_MS;
+    }
+
     /**
      * Save the DOB for the current email. Resolves true once the server has
-     * it. Saves run one at a time so an older value can't land last.
+     * it; on failure saveError holds the message to show. Saves run one at a
+     * time so an older value can't land last.
      */
     function saveDOB() {
         const email = getEmail();
@@ -168,11 +190,12 @@
             return Promise.resolve(false);
         }
 
-        const key = email.toLowerCase() + '|' + dobValue;
-        if (key === savedKey && key === queuedKey) {
+        const key = getKey();
+        if (isSaved(key)) {
             return Promise.resolve(true);
         }
-        if (key === queuedKey) {
+        if (key === queuedKey && key !== savedKey) {
+            // Already on its way.
             return saveQueue;
         }
 
@@ -189,14 +212,20 @@
         }))
             .then((response) => response.json())
             .then((data) => {
-                if (data.status === 'success') {
+                if (data && data.status === 'success') {
                     savedKey = key;
+                    savedAt = Date.now();
+                    saveError = '';
                     return true;
                 }
-                console.error('Failed to save DOB:', data.message);
+                // Our route answers {status: 'error', message}. WordPress's own
+                // errors, such as an expired nonce, have a code instead.
+                saveError = (data && data.status === 'error' && data.message) ? data.message : SAVE_FAILED_MESSAGE;
+                console.error('Failed to save DOB:', data && data.message);
                 return false;
             })
             .catch((error) => {
+                saveError = SAVE_FAILED_MESSAGE;
                 console.error('Error saving DOB:', error);
                 return false;
             })
@@ -238,7 +267,8 @@
 
     /**
      * Hold the Place Order click until the DOB is valid and saved for the
-     * email being used, then click again.
+     * email being used, then click again. If the save fails, show why and
+     * don't place the order.
      */
     function onPlaceOrderClick(event) {
         const button = event.target.closest && event.target.closest(PLACE_ORDER_SELECTOR);
@@ -253,16 +283,22 @@
             return;
         }
 
-        const email = getEmail();
-        const key = email.toLowerCase() + '|' + dobValue;
-        if (!email || (savedKey === key && queuedKey === key)) {
+        if (!getEmail() || isSaved(getKey())) {
             // Without an email block checkout shows its own error.
             return;
         }
 
         event.preventDefault();
         event.stopImmediatePropagation();
-        saveDOB().then(() => {
+        saveDOB().then((saved) => {
+            if (!saved) {
+                setError(saveError || SAVE_FAILED_MESSAGE);
+                const input = document.getElementById(FIELD_ID);
+                if (input) {
+                    input.focus();
+                }
+                return;
+            }
             resumingClick = true;
             try {
                 button.click();
