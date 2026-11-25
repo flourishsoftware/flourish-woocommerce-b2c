@@ -5,6 +5,7 @@ namespace FlourishWooCommercePlugin\Handlers;
 defined('ABSPATH') || exit;
 
 use FlourishWooCommercePlugin\API\FlourishAPI;
+use FlourishWooCommercePlugin\Helpers\AddressHelper;
 use FlourishWooCommercePlugin\Helpers\HttpRequestHelper;
 use FlourishWooCommercePlugin\Helpers\StockHelper;
 
@@ -124,6 +125,12 @@ class HandlerOrdersRetail
             // Determine fulfillment type from shipping method
             $fulfillment_type = $this->get_fulfillment_type($wc_order);
 
+            // Postal orders ship only to the address on the customer's state ID
+            $delivery_address_id = null;
+            if ($fulfillment_type === 'postal shipping') {
+                $delivery_address_id = $this->resolve_postal_address_id($wc_order, $customer);
+            }
+
             $order_payload = [
                 'original_order_id' => (string) $wc_order->get_id(),
                 'customer_id'       => $customer['flourish_customer_id'],
@@ -148,7 +155,7 @@ class HandlerOrdersRetail
                 $order_payload['expected_delivery_timestamp'] = $expected_timestamp;
 
                 // Add delivery address and contact information
-                $delivery_info = $this->get_delivery_information($wc_order);
+                $delivery_info = $this->get_delivery_information($wc_order, $delivery_address_id);
                 $order_payload = array_merge($order_payload, $delivery_info);
             } elseif ($fulfillment_type === 'pickup') {
                 $order_payload['expected_pickup_timestamp'] = $expected_timestamp;
@@ -481,24 +488,72 @@ class HandlerOrdersRetail
      */
     private function get_fulfillment_type($wc_order)
     {
-        $shipping_methods = $wc_order->get_shipping_methods();
+        $method_ids = [];
+        foreach ($wc_order->get_shipping_methods() as $shipping_method) {
+            $method_ids[] = $shipping_method->get_method_id();
+        }
 
-        if (empty($shipping_methods)) {
+        return self::fulfillment_type_for_methods($method_ids, $this->existing_settings);
+    }
+
+    /**
+     * Fulfillment type for a set of WooCommerce shipping method ids. Shared
+     * with checkout validation, which only has the chosen method ids.
+     *
+     * @param string[] $method_ids e.g. ["flat_rate"] or ["local_pickup:3"]
+     */
+    public static function fulfillment_type_for_methods($method_ids, $settings)
+    {
+        $method_ids = array_filter((array) $method_ids);
+
+        if (empty($method_ids)) {
             // No shipping method - default to delivery for online orders
             return 'delivery';
         }
 
-        foreach ($shipping_methods as $shipping_method) {
-            $method_id = $shipping_method->get_method_id();
-
+        foreach ($method_ids as $method_id) {
             // Map common WooCommerce shipping methods to Flourish fulfillment types
-            if (stripos($method_id, 'local_pickup') !== false || stripos($method_id, 'pickup') !== false) {
+            if (stripos($method_id, 'pickup') !== false) {
                 return 'pickup';
             }
         }
 
         // All other shipping methods use the configured type (delivery by default)
-        return $this->existing_settings['shipping_fulfillment_type'] ?? 'delivery';
+        return $settings['shipping_fulfillment_type'] ?? 'delivery';
+    }
+
+    /**
+     * Id of the customer's Flourish address that matches the order's shipping
+     * address. A new customer was just created with that address, so it
+     * matches; an existing customer must already have it on file. Throws when
+     * nothing matches: the order is not sent, and once the address is
+     * corrected in Flourish, "Sync order to Flourish" retries it.
+     */
+    private function resolve_postal_address_id($wc_order, $customer)
+    {
+        $shipping_address = AddressHelper::from_order_shipping($wc_order);
+        if (!AddressHelper::is_complete($shipping_address)) {
+            throw new \Exception('Postal shipping order has no complete shipping address.');
+        }
+
+        $address_id = AddressHelper::find_matching_address_id($customer['flourish_addresses'] ?? [], $shipping_address);
+        if ($address_id) {
+            return $address_id;
+        }
+
+        $formatted = implode(', ', array_filter([
+            $shipping_address['address_line_1'],
+            $shipping_address['address_line_2'],
+            $shipping_address['city'],
+            $shipping_address['state'],
+            $shipping_address['postcode'],
+        ]));
+
+        throw new \Exception(sprintf(
+            'Flourish customer %s has no active shipping address matching %s. Postal orders ship only to the address on the customer\'s state ID. Update the customer\'s address in Flourish, then use "Sync order to Flourish".',
+            $customer['flourish_customer_id'],
+            $formatted
+        ));
     }
 
     /**
@@ -570,9 +625,15 @@ class HandlerOrdersRetail
      * @param \WC_Order $wc_order The WooCommerce order
      * @return array Delivery information fields for Flourish API
      */
-    private function get_delivery_information($wc_order)
+    private function get_delivery_information($wc_order, $delivery_address_id = null)
     {
         $delivery_info = [];
+
+        // Postal orders send the id of the customer's address on file. Flourish
+        // drops a raw address on postal orders.
+        if ($delivery_address_id) {
+            $delivery_info['delivery_address_id'] = (int) $delivery_address_id;
+        }
 
         // Build delivery address
         $shipping_address = [
@@ -584,8 +645,9 @@ class HandlerOrdersRetail
             'country'        => $wc_order->get_shipping_country(),
         ];
 
-        // Only include address if we have the required fields
-        if (!empty($shipping_address['address_line_1']) &&
+        // Raw address for Delivery, when we have the required fields
+        if (!$delivery_address_id &&
+            !empty($shipping_address['address_line_1']) &&
             !empty($shipping_address['city']) &&
             !empty($shipping_address['state']) &&
             !empty($shipping_address['postcode']) &&

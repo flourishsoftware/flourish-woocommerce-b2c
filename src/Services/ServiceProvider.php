@@ -10,6 +10,7 @@ use FlourishWooCommercePlugin\API\FlourishWebhook;
 use FlourishWooCommercePlugin\CustomFields\DateOfBirth;
 use FlourishWooCommercePlugin\CustomFields\FlourishOrderID;
 use FlourishWooCommercePlugin\Handlers\HandlerCheckoutAgeRestriction;
+use FlourishWooCommercePlugin\Handlers\HandlerCheckoutPostalAddress;
 use FlourishWooCommercePlugin\Handlers\HandlerCheckoutThcLimit;
 use FlourishWooCommercePlugin\Handlers\HandlerCouponLineLimit;
 use FlourishWooCommercePlugin\Handlers\HandlerOrdersRetail;
@@ -62,6 +63,10 @@ class ServiceProvider
         // Per-order THC limit at checkout
         $handler_thc = new HandlerCheckoutThcLimit($existing_settings);
         $handler_thc->register_hooks();
+
+        // Postal orders ship only to the customer's ID address on file
+        $handler_postal_address = new HandlerCheckoutPostalAddress($existing_settings);
+        $handler_postal_address->register_hooks();
 
         // Flourish per-order line cap on synced coupons
         $handler_coupon_lines = new HandlerCouponLineLimit();
