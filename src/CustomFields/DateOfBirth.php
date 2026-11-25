@@ -33,7 +33,6 @@ class DateOfBirth
         // Checkout support
         add_filter('woocommerce_billing_fields', [$this, 'add_dob_billing_field']);
         add_filter('woocommerce_checkout_fields', [$this, 'add_dob_to_checkout_fields']);
-        add_action('woocommerce_after_order_notes', [$this, 'display_dob_field_manual']);
         add_action('woocommerce_checkout_process', [$this, 'validate_dob_field']);
         add_action('woocommerce_checkout_update_order_meta', [$this, 'save_dob_to_order']);
 
@@ -182,28 +181,6 @@ class DateOfBirth
         ];
 
         return $fields;
-    }
-
-    /**
-     * Manually display DOB field on checkout.
-     */
-    public function display_dob_field_manual($checkout)
-    {
-        $min_age = $this->existing_settings['minimum_age'] ?? self::DEFAULT_MINIMUM_AGE;
-
-        echo '<div id="flourish_dob_checkout_field" class="flourish-dob-field">';
-        echo '<h3>' . \__('Age Verification', 'flourish-woocommerce') . '</h3>';
-
-        \woocommerce_form_field('billing_dob', [
-            'type'        => 'date',
-            'class'       => ['form-row-wide'],
-            'label'       => \__('Date of Birth', 'flourish-woocommerce'),
-            'required'    => true,
-            'placeholder' => \__('YYYY-MM-DD', 'flourish-woocommerce'),
-            'description' => sprintf(\__('You must be at least %d years old to purchase these products.', 'flourish-woocommerce'), $min_age),
-        ], $checkout->get_value('billing_dob'));
-
-        echo '</div>';
     }
 
     /**
