@@ -348,6 +348,8 @@ class FlourishAPI
         }
 
         $customer['flourish_customer_id'] = $existing['id'];
+        $customer['flourish_addresses'] = $existing['address'] ?? [];
+        $customer['flourish_customer_created'] = false;
 
         return $customer;
     }
@@ -515,6 +517,9 @@ class FlourishAPI
         }
 
         $customer['flourish_customer_id'] = $response_data['data']['id'];
+        // Flourish returns the created addresses with their ids
+        $customer['flourish_addresses'] = $response_data['data']['address'] ?? [];
+        $customer['flourish_customer_created'] = true;
 
         return $customer;
     }

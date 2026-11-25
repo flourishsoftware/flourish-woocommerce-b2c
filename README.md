@@ -170,3 +170,7 @@ Subscribe to these resource types in Flourish:
 - WordPress 5.0 or higher
 - WooCommerce 7.0 or higher
 - PHP 7.4 or higher
+
+## Local development
+
+See [docs/local-dev.md](docs/local-dev.md) to run the plugin in a local WooCommerce site against a Flourish test account.
